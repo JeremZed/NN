@@ -9,6 +9,7 @@ class Workspace():
     def __init__(self):
 
         self.__dir_runtime = tools.create_directory("./runtime")
+        self.__dir_resources = tools.create_directory("./resources")
         self.__date_init = tools.get_current_date()
         self.__platform = platform.uname()
 

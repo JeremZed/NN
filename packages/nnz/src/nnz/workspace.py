@@ -1,6 +1,7 @@
 import platform
 import pkg_resources
 import nnz.tools as tools
+from nnz.dataset import Dataset
 
 class Workspace():
     """
@@ -12,6 +13,7 @@ class Workspace():
         self.__dir_resources = tools.create_directory("./resources")
         self.__date_init = tools.get_current_date()
         self.__platform = platform.uname()
+        self.__datasets = []
 
     def get_date_init(self):
         """ Permet de retourner la date où le workspace a été initialisé """
@@ -32,3 +34,26 @@ class Workspace():
         installed_packages = pkg_resources.working_set
         for package in installed_packages:
             print(f"{package.key}=={package.version}")
+
+
+    def add_dataset(self, name, dataset,  **kwargs):
+        """ Permet d'ajouter un nouveau dataset au work """
+        self.__datasets.append({ "name" : name, "dataset" : Dataset(dataset, **kwargs) })
+
+    def clear_datasets(self):
+        """ Permet de vider la liste des datasets """
+        self.__datasets = []
+
+    def remove_dataset(self, name):
+        """ Permet de supprimer un dataset de la liste """
+        d = tools.get_item("name", name, self.__datasets)
+        if d is not None:
+            del self.__datasets[d[0]]
+
+    def get_dataset(self, name="__all__"):
+        """ Getter de l'attribut __datasets """
+        if name == "__all__":
+            return self.__datasets
+        else:
+            d = tools.get_item("name", name, self.__datasets)
+            return d[1]['dataset'] if d is not None else None

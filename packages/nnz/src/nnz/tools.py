@@ -87,3 +87,12 @@ def show_error(error):
     else:
         print("[ERROR]:")
         traceback.print_exc(file=sys.stdout)
+
+def get_item(attr, value, list):
+    """ Permet de récupérer un dictionnaire en fonction de la valeur d'un attribut dans une liste de dictionnaire """
+
+    for i, v in enumerate(list):
+        if attr in v and v[attr] == value:
+            return (i, v)
+
+    return None

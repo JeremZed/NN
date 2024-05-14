@@ -1,10 +1,11 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import numpy as np
 from IPython.display import display, Markdown
 import math
+import scipy.stats as st
 
 
 class Dataset():
@@ -266,7 +267,7 @@ class Dataset():
         lorenz = np.append([0],lorenz)
         return lorenz
 
-    def showBoxPlotNumerical(self, columns=[], target="", excludes=[], count_box=4, vert=True):
+    def showBoxPlotNumerical(self, columns=[], target="", excludes=[], count_box=4, show_table=False):
         """ Permet d'afficher des boxplots par tranche de valeurs de la variable cible """
         for i, col in enumerate(columns):
 
@@ -282,14 +283,14 @@ class Dataset():
                 indices = np.digitize(self.df[field_x], tranches)
 
                 for i, tranche in enumerate(tranches):
-                    # Ici on récupère les montants des dépenses pour notre tranche en fonction de la liste "indices"
-                    montants = self.df.loc[ indices == i, field_y ]
-                    if len(montants) > 0:
+
+                    items = self.df.loc[ indices == i, field_y ]
+                    if len(items) > 0:
                         c = {
-                            'valeurs' : montants,
-                            'centre_classe' : tranche, #(tranches - (taille/2)) # On annule notre décalage sur l'axe x
-                            'taille' : len(montants),
-                            'quartiles' : [np.percentile(montants, p) for p in [25,50,75]]
+                            'valeurs' : items,
+                            'centre_classe' : tranche,
+                            'taille' : len(items),
+                            'quartiles' : [np.percentile(items, p) for p in [25,50,75]]
                         }
                         classes.append(c)
                 plt.figure(figsize=(10,7))
@@ -308,13 +309,40 @@ class Dataset():
                             positions= positions,
                             showfliers= True,
                             widths= taille*0.7,
-                            labels=labels,
-                            vert=vert)
+                            labels=labels)
                 axe.set_xlabel(f'{field_x}')
                 axe.set_ylabel(f'Observations de {field_y}')
 
                 axe.set_title(f'Répartition par tranches de la variable {field_y} vs. {field_x}')
                 plt.show()
+
+                if show_table == True:
+                    pearson = st.pearsonr(self.df[field_x],self.df[field_y])
+                    covariance = np.corrcoef(self.df[field_x],self.df[field_y])
+                    a, b = np.polyfit(self.df[field_x],self.df[field_y], 1)
+                    d = {
+                        "pearson_statistic" : pearson[0],
+                        "pearson_pvalue" : pearson[1],
+                        "correlation" : covariance[0][1],
+                        "a" : a,
+                        "b" : b
+                    }
+
+                    fig, (axe1) = plt.subplots(1,1, figsize=(15,8))
+
+                    x_n = int(self.df[field_x].max()) + 1
+
+                    axe1.plot(self.df[field_x],self.df[field_y], 'o')
+                    axe1.plot(np.arange( x_n ), [a*x+b for x in np.arange(x_n)])
+                    axe1.set_xlabel(f'{field_x}')
+                    axe1.set_ylabel(f'{field_y}')
+                    axe1.set_title(f'Regression linaire de {field_y} vs {field_x}')
+
+
+                    print(pd.DataFrame([d]))
+                    print("\n")
+                    print("-"*100)
+                    print("\n")
 
     def showGridBoxplot(self, columns=[], excludes=[], y="", count_cols=3, vert=False):
         """ Permet d'afficher une grille de boîte à moustache """
@@ -357,3 +385,125 @@ class Dataset():
                 axe.set_xlabel(f'{target}')
                 axe.set_ylabel(f'{col}')
                 plt.show()
+
+    def getCorrelationPearson(self, columns=[], excludes=[], target="", fillna=False, with_grid=False, count_cols=3):
+        ''' Permet de retourner une vision de corrélation Pearson entre les variables et la target dans le cas variable continue / continue '''
+        res = []
+        data = self.df.copy()
+
+        if fillna == True:
+            data = data.fillna(0)
+
+        for col in columns:
+            if col not in excludes:
+                p = st.pearsonr(data[col], data[target] )
+                res.append( {"name" : col, "statistic" : p[0], "pvalue" : p[1] } )
+
+        df = pd.DataFrame(res).sort_values('statistic')
+
+        if with_grid == True:
+            plt.figure(figsize=(15, 15))
+            count_rows = math.ceil(len(columns) / count_cols)
+            c = 1
+            for row in df.values:
+
+                col = row[0]
+                if col not in excludes :
+
+                    plt.subplot(count_rows, count_cols, c)
+
+                    x_n = int(self.df[target].max()) + 1
+                    a, b = np.polyfit(self.df[target],self.df[col], 1)
+
+                    plt.plot(self.df[target],self.df[col], 'o')
+                    plt.plot(np.arange( x_n ), [a*x+b for x in np.arange(x_n)])
+                    plt.xlabel(f'{target}')
+                    plt.ylabel(f'{col}')
+                    plt.title(f'Regression linaire de {col} vs {target}')
+
+                    c+=1
+
+            plt.tight_layout()
+            plt.show()
+
+        return df
+
+    def showCrossTab(self, variables, target):
+        ''' Permet de visualiser la crosstab de pandas en fonctions des variables qualitatives '''
+        for col in variables:
+            print( pd.crosstab(self.df[target], self.df[col]) )
+
+
+    def getHeatCrossTab(self, variables, target):
+        ''' Permet de visualiser une heatmap des crosstab des variables qualitatives '''
+        for col in variables:
+            plt.figure()
+            sns.heatmap( pd.crosstab(self.df[target], self.df[col]), annot=True, fmt="d" )
+            plt.pause(0.001)
+
+        plt.show(block=True)
+
+    def getCorrelationCategoricalNumerical(self,columns=[], excludes=[], target=""):
+        """ Permet de retourner un tableau de rapport de corrélation entre les variables qualitative et une variable quantitative """
+        def eta_squared(x,y):
+            moyenne_y = y.mean()
+            classes = []
+            for classe in x.unique():
+                yi_classe = y[x==classe]
+                classes.append({'ni': len(yi_classe),
+                                'moyenne_classe': yi_classe.mean()})
+            SCT = sum([(yj-moyenne_y)**2 for yj in y])
+            SCE = sum([c['ni']*(c['moyenne_classe']-moyenne_y)**2 for c in classes])
+            rapport = SCE/SCT
+
+            return (SCT, SCE, rapport)
+
+        res=[]
+        for i, col in enumerate(columns):
+            if col not in excludes:
+                r = eta_squared(self.df[col],self.df[target])
+                res.append({ 'name' : col, 'SCT' : r[0], 'SCE' : r[1], 'rapport de corrélation' : r[2] })
+
+        return pd.DataFrame(res)
+
+    def getHeatCorrelationNumerical(self, columns, cluster=False):
+        ''' Permet d'afficher une heatmap des corrélations entre variables continue '''
+        plt.figure(figsize=(15,8))
+        sns.heatmap(self.df[ columns ].corr(), annot=True)
+        if cluster == True:
+            sns.clustermap(self.df[ columns ].corr(), annot=True)
+
+    def getHeatCorrelationCategorical(self, columns=[], excludes=[], count_cols=2, cluster=False):
+
+        for i, _col in enumerate(columns):
+            if _col not in excludes :
+
+                target = _col
+
+                plt.figure(figsize=(15, 240 ))
+                count_rows = math.ceil(len(columns) / count_cols) * len(columns)
+                idx = 1
+
+                for col in columns :
+                    if _col != col and col not in excludes:
+                        # print(count_rows, count_cols, idx)
+                        axe = plt.subplot(count_rows, count_cols, idx)
+
+                        cont = self.df[[target,col]].pivot_table(index=target,columns=col,aggfunc=len,margins=True,margins_name="Total")
+                        tx = cont.loc[:,["Total"]]
+                        ty = cont.loc[["Total"],:]
+                        n = len(self.df)
+                        indep = tx.dot(ty) / n
+
+                        c = cont.fillna(0) # On remplace les valeurs nulles par 0
+                        measure = (c-indep)**2/indep
+                        xi_n = measure.sum().sum()
+                        table = measure/xi_n
+                        sns.heatmap(table.iloc[:-1,:-1],annot=True, ax=axe)
+
+                        idx += 1
+                plt.tight_layout()
+                plt.show()
+                print("\n")
+                print("-"*100)
+                print("\n")

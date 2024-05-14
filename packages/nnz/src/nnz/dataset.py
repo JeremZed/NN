@@ -4,6 +4,7 @@ import seaborn as sns
 from sklearn.preprocessing import MinMaxScaler
 import numpy as np
 from IPython.display import display, Markdown
+import math
 
 
 class Dataset():
@@ -65,7 +66,7 @@ class Dataset():
         """ Retourne la description statistique du dataset """
         return self.df.describe(include="all")
 
-    def heatmapNanValue(self, cbar=True):
+    def showHeatmapNanValue(self, cbar=True):
         ''' Permet de produire une image de l'ensemble du dataset pour visualiser les valeurs manquantes '''
         plt.figure(figsize=(20,10))
         plt.title("Représentation des valeurs manquante.")
@@ -84,28 +85,70 @@ class Dataset():
 
         return df.sort_values('ratio', ascending=False)
 
-    def getHistoVariable(self, column=None):
-        ''' Permet d'afficher un graphique de répartition des données en fonction de leur type '''
-        for col in self.df.columns:
-            show = False
+    def showHistoVariable(self, columns=[], excludes=[], discrete=False, show_table=False):
+        ''' Permet d'afficher un graphique de la distribution numérique des variables '''
+        for col in columns:
+            if col not in excludes and pd.api.types.is_numeric_dtype(self.df[col]):
+                plt.figure(figsize=(15,8))
+                sns.histplot(data=self.df, x=col, discrete=discrete, kde=True)
+                plt.title(f"Distribution de la variable {col}")
+                plt.show()
 
-            if column is not None and col == column:
-                show = True
+                if show_table == True:
+                    values = self.df[col]
+                    q = [np.percentile(values, p) for p in [25,50,75]]
+                    n = len(values)
 
-            if column is None:
-                show = True
+                    lorenz = self.getLorenz(values)
+                    AUC = (lorenz.sum() -lorenz[-1]/2 -lorenz[0]/2)/n
+                    S = 0.5 - AUC
+                    gini = 2*S
 
-            if show == True:
-                if pd.api.types.is_numeric_dtype(self.df[col]):
-                    plt.figure(figsize=(15,8))
-                    center = False
-                    if self.df[col].dtype in ['uint8']:
-                        center = True
+                    c = {
+                        'taille' : n,
+                        # Mesure de forme
+                        'quartiles_25' : q[0],
+                        'quartiles_50' : q[1],
+                        'quartiles_75' : q[2],
+                        'mean' : values.mean(),
+                        'mean_square' : values.mean()**2,
+                        'median' : values.median(),
+                        'median_square' : values.median()**2,
+                        'max' : values.max(),
+                        'min' : values.min(),
+                        'mode' : values.mode().loc[0],
+                        'skew' : values.skew(),
+                        'kurtosis' : values.kurtosis(),
+                        # Mesure de dispersion
+                        'variance' : values.var(),
+                        'variance_corrige' : values.var(ddof=0),
+                        'ecart-type' : values.std(),
+                        'coef_variation' : values.std() / values.mean(),
+                        'AUC' : AUC,
+                        'S' : S,
+                        'gini' : gini
+                    }
 
-                    sns.histplot(data=self.df, x=col, discrete=center)
-                    plt.show()
+                    print(f"Information de la variable {col}")
+                    print(pd.DataFrame([c]))
 
-    def getCountValuesByVariable(self, ascending=True, by="values"):
+    def showGridHistoVariable(self, columns=[], excludes=[]):
+        ''' Permet d'afficher un ensemble de graphique de la distribution numérique des variables '''
+        plt.figure(figsize=(12, 8))
+
+        count_cols = 5
+        count_rows = math.ceil(len(columns) / count_cols)
+
+        for i, col in enumerate(columns):
+
+            if col not in excludes and pd.api.types.is_numeric_dtype(self.df[col]):
+                plt.subplot(count_rows, count_cols, i+1)
+                sns.histplot(data=self.df, x=col, kde=True)
+
+        plt.tight_layout()
+        plt.show()
+
+    def showCountValuesByVariable(self, ascending=True, by="values"):
         """ Permet d'afficher le nombre d'occurence ayant les mêmes valeurs pour chaque variable """
         if isinstance(self.df, pd.DataFrame) :
             for col in self.df.columns:
@@ -135,54 +178,182 @@ class Dataset():
 
         return tab
 
-    def showDistributionVariableQualitative(self, col, show_table=False):
+    def showDistributionVariableQualitative(self, columns=[], excludes=[], show_table=False):
         """ Permet de visualiser la distribution empirique d'une variable via un graphe pie et bar"""
 
-        def addlabels(ax, x,y):
+        def addvalues(ax, x,y):
             """ Ajout de la valeur en haut de la barre du graphique bar """
             for i in range(len(x)):
                 ax.text(i, y[i]//2, y[i], ha = 'center')
 
-        fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(12, 9))
+        for col in columns:
+            if col not in excludes:
 
-        t = self.df[col].value_counts(normalize=False).reset_index()
+                fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(12, 9))
 
-        axes[0].pie(t['count'], labels=t[col], autopct='%1.1f%%')
+                t = self.df[col].value_counts(normalize=False).reset_index()
 
-        axes[1].bar(height=t['count'], x=t[col], label=t[col])
-        addlabels(axes[1], t[col], t['count'])
+                axes[0].pie(t['count'], labels=t[col], autopct='%1.1f%%')
 
-        fig.suptitle(f'Distribution empirique de la variable {col}')
+                axes[1].bar(height=t['count'], x=t[col], label=t[col])
+                addvalues(axes[1], t[col], t['count'])
 
+                fig.suptitle(f'Distribution empirique de la variable {col}')
+
+                plt.show()
+
+                if show_table == True:
+                    tab = self.getDistributionVariable(col)
+                    print(tab)
+
+    def showGridDistributionVariableQualitative(self, columns=[], excludes=[], count_cols=3):
+        """ Permet de visualiser la distribution empirique d'une variable via un graphe pie et bar"""
+
+        plt.figure(figsize=(12, 8))
+        count_rows = math.ceil(len(columns) / count_cols)
+        c = 1
+        for i, col in enumerate(columns):
+            if col not in excludes :
+                plt.subplot(count_rows, count_cols, c)
+                t = self.df[col].value_counts(normalize=False).reset_index()
+                plt.bar(height=t['count'], x=t[col], label=t[col])
+                plt.title(f'Distribution de la variable {col}')
+                c+=1
+
+        plt.tight_layout()
         plt.show()
 
-        if show_table == True:
-            tab = self.getDistributionVariable(col)
-            print(tab)
 
-    def showDistributionVariableQualitativeHorizontal(self, col, show_table=False, figsize=(15,15), limit_table=None):
+    def showDistributionVariableQualitativeHorizontal(self, columns=[], excludes=[], show_table=False, figsize=(15,15), limit_table=None):
         """ Permet de visualiser la distribution empirique d'une variable via un graphe bar horizontal """
 
-        def addlabels(ax, x,y):
+        def addvalues(ax, x,y):
             """ Ajout de la valeur en haut de la barre du graphique bar """
             for i, v in enumerate(y):
                 ax.text(x[i]+0.05, i, x[i], verticalalignment='center')
 
-        fig, axes = plt.subplots(figsize=figsize)
+        for col in columns:
+            if col not in excludes:
+                fig, axes = plt.subplots(figsize=figsize)
 
-        t = self.df[col].value_counts(normalize=False).reset_index()
+                t = self.df[col].value_counts(normalize=False).reset_index()
 
-        axes.barh(t[col], t['count'], align='center')
-        addlabels(axes, t['count'], t[col])
+                axes.barh(t[col], t['count'], align='center')
+                addvalues(axes, t['count'], t[col])
 
-        axes.invert_yaxis()  # labels read top-to-bottom
-        axes.set_xlabel(f'Nombre')
-        axes.set_title(f'Distribution empirique de la variable {col}')
+                axes.invert_yaxis()  # labels read top-to-bottom
+                axes.set_xlabel(f'Nombre')
+                axes.set_title(f'Distribution empirique de la variable {col}')
 
+                plt.show()
+
+                if show_table == True:
+                    tab = self.getDistributionVariable(col)
+                    pd.set_option('display.max_rows', limit_table)
+                    print(tab)
+                    pd.set_option('display.max_rows', None)
+
+
+    def showAllModalities(self, columns=[]):
+        """ Permet de lister toutes les modalités de chaque variable qualitatives """
+
+        for col in columns:
+            print(f"Variable {col} : {self.df[col].unique()}")
+
+    def getLorenz(self, values):
+        """ Permet de retourner la courbe de Lorenz de la distribution d'une variable """
+        lorenz = np.cumsum(np.sort(values)) / values.sum()
+        lorenz = np.append([0],lorenz)
+        return lorenz
+
+    def showBoxPlotNumerical(self, columns=[], target="", excludes=[], count_box=4, vert=True):
+        """ Permet d'afficher des boxplots par tranche de valeurs de la variable cible """
+        for i, col in enumerate(columns):
+
+            if col not in excludes:
+
+                classes = []
+                count_box = count_box + 1
+                field_x = target
+                taille = math.ceil(self.df[field_x].max() / count_box)
+                field_y = col
+
+                tranches = np.arange(0, max(self.df[field_x]), taille )
+                indices = np.digitize(self.df[field_x], tranches)
+
+                for i, tranche in enumerate(tranches):
+                    # Ici on récupère les montants des dépenses pour notre tranche en fonction de la liste "indices"
+                    montants = self.df.loc[ indices == i, field_y ]
+                    if len(montants) > 0:
+                        c = {
+                            'valeurs' : montants,
+                            'centre_classe' : tranche, #(tranches - (taille/2)) # On annule notre décalage sur l'axe x
+                            'taille' : len(montants),
+                            'quartiles' : [np.percentile(montants, p) for p in [25,50,75]]
+                        }
+                        classes.append(c)
+                plt.figure(figsize=(10,7))
+
+                valeurs = [c["valeurs"] for c in classes]
+                positions = [c["centre_classe"] for c in classes]
+                labels = []
+
+                for i, c in enumerate(classes):
+                    labels.append("{}\n(n={})".format(c['centre_classe'], c["taille"]))
+
+                # affichage des boxplots
+                # showfliers= False -> n'affiche pas les outliers
+                fig, axe = plt.subplots(figsize=(15,8))
+                axe.boxplot(valeurs,
+                            positions= positions,
+                            showfliers= True,
+                            widths= taille*0.7,
+                            labels=labels,
+                            vert=vert)
+                axe.set_xlabel(f'{field_x}')
+                axe.set_ylabel(f'Observations de {field_y}')
+
+                axe.set_title(f'Répartition par tranches de la variable {field_y} vs. {field_x}')
+                plt.show()
+
+    def showGridBoxplot(self, columns=[], excludes=[], y="", count_cols=3, vert=False):
+        """ Permet d'afficher une grille de boîte à moustache """
+        plt.figure(figsize=(15, 15))
+        count_rows = math.ceil(len(columns) / count_cols)
+        c = 1
+        for i, col in enumerate(columns):
+            if col not in excludes :
+                plt.subplot(count_rows, count_cols, c)
+                sns.boxplot(data=self.df, x=col, y=y)
+                plt.title(f'{col} vs. {y}')
+                c+=1
+
+        plt.tight_layout()
         plt.show()
 
-        if show_table == True:
-            tab = self.getDistributionVariable(col)
-            pd.set_option('display.max_rows', limit_table)
-            print(tab)
-            pd.set_option('display.max_rows', None)
+    def showBoxplotCategoricalNumerical(self,columns=[], excludes=[], target=""):
+        """ Permet d'afficher un boxplot entre une variable qualitative et quantitative """
+        for i, col in enumerate(columns):
+            if col not in excludes:
+                t = self.df[col].value_counts(normalize=False).reset_index()
+                groupes = []
+                labels = []
+                for m in t.values:
+                    groupes.append(self.df[self.df[col]==m[0]][target])
+                    labels.append("{} (n={})".format(m[0], m[1]))
+
+                # Propriétés graphiques (pas très importantes)
+                medianprops = {'color':"black"}
+                meanprops = {'markeredgecolor':'black',
+                            'markerfacecolor':'firebrick'}
+
+                figsize=(10, math.ceil(len(labels) / 2) )
+
+                fig, axe = plt.subplots(figsize=figsize)
+                axe.boxplot(groupes, labels=labels, showfliers=True, medianprops=medianprops,
+                            vert=False, patch_artist=True, meanprops=meanprops)
+                axe.yaxis.grid(True)
+                axe.xaxis.grid(True)
+                axe.set_xlabel(f'{target}')
+                axe.set_ylabel(f'{col}')
+                plt.show()

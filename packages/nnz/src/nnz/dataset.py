@@ -1,7 +1,10 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler, Normalizer
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder
+# from scipy.stats import spearmanr, zscore
 import numpy as np
 from IPython.display import display, Markdown
 import math
@@ -12,12 +15,13 @@ class Dataset():
 
     def __init__(self, data, t="array", sep=","):
         self.is_dataframe = False
+        self.rollback_scaler = None
 
         if isinstance(data, str) :
             if t == "csv":
                 self.df = self.__loadDatasetCSV(data, sep=sep)
         else:
-            if len(data.shape) < 2:
+            if len(data.shape) <= 2:
                 if t == "array":
                     self.df = self.__create(data)
                 else:
@@ -50,6 +54,25 @@ class Dataset():
     def getCountDuplicatedRows(self):
         """ Permet de retourner le nombre de ligne identique """
         return self.df.duplicated().sum()
+
+    def calculateOutliersZscore(self, columns=[], threshold_z = 3):
+        """ Permet de retourner un df représentant les outliers dans les colonnes passées en paramètres """
+        df = st.zscore(self.df[columns])
+        d = []
+        for c in df.columns:
+            count = len(df[ np.abs(df[c]) > threshold_z ]  )
+            max = df[c].max()
+            min = df[c].min()
+            ratio = round(count / self.df.shape[0], 2)
+
+            d.append( { 'variable' : c, 'count' : count, 'max' : max, 'min' : min, 'ratio' : ratio } )
+        return pd.DataFrame(d).set_index('variable').sort_values('count', ascending=False)
+
+    def showBoxplot(self, columns=[]):
+        """ Permet d'afficher une liste de boîte à moustache pour chaque colonne """
+        for col in self.df[columns].columns:
+            sns.boxplot(self.df[col], showfliers= True)
+            plt.show()
 
     def showDuplicatedRowByVariable(self, column=None):
         """ Permet de retourner les lignes ayant les mêmes valeurs en fonction des colonnes passées en paramètre """
@@ -107,7 +130,7 @@ class Dataset():
 
                     c = {
                         'taille' : n,
-                        # Mesure de forme
+                        # Mesure de tendance centrale
                         'quartiles_25' : q[0],
                         'quartiles_50' : q[1],
                         'quartiles_75' : q[2],
@@ -118,6 +141,7 @@ class Dataset():
                         'max' : values.max(),
                         'min' : values.min(),
                         'mode' : values.mode().loc[0],
+                        # Mesure de forme
                         'skew' : values.skew(),
                         'kurtosis' : values.kurtosis(),
                         # Mesure de dispersion
@@ -125,8 +149,10 @@ class Dataset():
                         'variance_corrige' : values.var(ddof=0),
                         'ecart-type' : values.std(),
                         'coef_variation' : values.std() / values.mean(),
+                        # Mesure de concentration
+                        'lorenz' : lorenz.sum(),
                         'AUC' : AUC,
-                        'S' : S,
+                        'Surface' : S,
                         'gini' : gini
                     }
 
@@ -507,3 +533,103 @@ class Dataset():
                 print("\n")
                 print("-"*100)
                 print("\n")
+
+    def split(self, target, size_train=0.6, size_val=0.15, size_test=0.25, random_state=123, stratify=None, verbose=0):
+        """ Permet de spliter un df en 3 partie train, validation, test  """
+        if size_train + size_val + size_test != 1.0:
+            raise ValueError( f'Le cumul de size_train:{size_train}, size_val:{size_val}, size_test:{size_test} n\'est pas égal à 1.0')
+
+        if target not in self.df.columns:
+            raise ValueError(f'La colonne : {target} n\'est pas présente dans le dataframe')
+
+        X = self.df.drop(target, axis=1)
+        y = self.df[target]
+
+        y_stratify = None
+        if stratify is not None:
+            y_stratify = y
+
+        X_train, X_temp, y_train, y_temp = train_test_split(X, y, stratify=y_stratify, test_size=(1.0 - size_train), random_state=random_state)
+
+        size_rest = size_test / (size_val + size_test)
+
+        y_stratify_temp = None
+        if stratify is not None:
+            y_stratify_temp = y_temp
+
+        X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, stratify=y_stratify_temp,test_size=size_rest,random_state=random_state)
+
+        assert len(self.df) == len(X_train) + len(X_val) + len(X_test)
+
+        if verbose > 0:
+            print(f"Ratio : size_train={size_train}, size_val={size_val}, size_test={size_test}")
+            print(f"Shape Trainset => X : {X_train.shape} y : {y_train.shape}")
+            print(f"Shape Valset => X : {X_val.shape} y : {y_val.shape}")
+            print(f"Shape Testset => X : {X_test.shape} y : {y_test.shape}")
+
+        return X_train, y_train, X_val, y_val, X_test, y_test
+
+
+    def getCategoricalVariableEncoded(self, columns=[], excludes=[], encoder="one-hot"):
+        """ Permet d'encoder des variables qualitatives """
+
+        columns_to_hot = [ item for item in columns if item not in excludes ]
+        output = None
+
+        if encoder == "one-hot":
+            cat_encoder = OneHotEncoder()
+            encoded = cat_encoder.fit_transform(self.df[ columns_to_hot ])
+
+            output = pd.DataFrame(encoded.toarray(), columns=cat_encoder.get_feature_names_out(), index=self.df[ columns_to_hot ].index)
+
+
+        if output is not None:
+            df = pd.concat([self.df, output], axis=1)
+            df = df.drop(columns_to_hot,axis=1)
+
+            return df
+
+        return output
+
+    def scaler(self, mode="min-max", excludes=[], verbose=0):
+        """ Permet de centrer/réduire ou de normaliser les datas sans faire de copie """
+        self.rollback_scaler = self.df.copy()
+        cols = [ item for item in self.df.columns if item not in excludes ]
+
+        if mode == "custom-normalizer":
+            self.df_exclued = self.df[excludes].copy()
+            self.df = (self.df[cols] ) / self.df[cols].std()
+            self.df[excludes] = self.df_exclued
+            self.rollback_scaler = mode
+        else :
+            if mode == "min-max":
+                scaler = MinMaxScaler()
+
+            elif mode == "standard":
+                scaler = StandardScaler()
+
+            elif mode == "normalizer":
+                scaler = Normalizer()
+            else:
+                raise Exception(f"Le mode {mode} n'est pas pris en compte.")
+
+        if mode != "custom-normalizer":
+            df_scaled = scaler.fit_transform(self.df[cols])
+            self.df_exclued = self.df[excludes].copy()
+            self.df = pd.DataFrame(df_scaled, columns=self.df[cols].columns)
+            self.df[excludes] = self.df_exclued
+            self.rollback_scaler = scaler
+
+        if verbose > 0:
+            d = self.df.describe()
+            return d.loc[['min', 'max']]
+
+    def rollbackScaler(self, excludes=[]):
+        """ Permet d'annuler le scaling fait sur les datas """
+        cols = [ item for item in self.df.columns if item not in excludes ]
+
+        if self.rollback_scaler is not None:
+            if self.rollback_scaler == "custom-normalizer":
+                self.df[cols] = (self.df[cols]) * self.df[cols].std()
+            else:
+                self.df[cols] = self.rollback_scaler.inverse_transform(self.df[cols])

@@ -57,3 +57,4 @@ class Workspace():
         else:
             d = tools.get_item("name", name, self.__datasets)
             return d[1]['dataset'] if d is not None else None
+

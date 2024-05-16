@@ -1,5 +1,6 @@
 import nnz.tools as tools
 from nnz.workspace import Workspace
+from nnz.workspace import MODEL_LinearRegression, MODEL_GradientBoostingRegressor, MODEL_RandomForestRegressor, MODEL_SVR, MODEL_XGBRegressor
 from nnz.dataset import Dataset
 import os
 import math

@@ -6,36 +6,19 @@ from nnz.dataset import Dataset
 import numpy as np
 import matplotlib.pyplot as plt
 import math
+import pandas as pd
+import pickle
+import copy
+import time
 
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.svm import SVR
-from xgboost import XGBRegressor
+
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import MinMaxScaler, StandardScaler, Normalizer
+from sklearn.model_selection import GridSearchCV
 
 from sklearn.metrics import mean_squared_error,r2_score, mean_absolute_error, explained_variance_score, root_mean_squared_error
 from scipy.stats import spearmanr, pearsonr
 from sklearn.model_selection import learning_curve
-
-MODEL_LinearRegression = "LinearRegression"
-MODEL_RandomForestRegressor = "RandomForestRegressor"
-MODEL_GradientBoostingRegressor = "GradientBoostingRegressor"
-MODEL_SVR = "SVR"
-MODEL_XGBRegressor = "XGBRegressor"
-
-class _LinearRegression(LinearRegression):
-    pass
-
-class _RandomForestRegressor(RandomForestRegressor):
-    pass
-
-class _GradientBoostingRegressor(GradientBoostingRegressor):
-    pass
-
-class _SVR(SVR):
-    pass
-
-class _XGBRegressor(XGBRegressor):
-    pass
 
 class Workspace():
     """
@@ -93,24 +76,6 @@ class Workspace():
             d = tools.get_item("name", name, self.__datasets)
             return d[1]['dataset'] if d is not None else None
 
-    def model(self, name, **kwargs):
-        """ Factory de modèle """
-        model = None
-        if name == MODEL_LinearRegression:
-            model = _LinearRegression(**kwargs)
-        if name == MODEL_RandomForestRegressor:
-            model = _RandomForestRegressor(**kwargs)
-        if name == MODEL_GradientBoostingRegressor:
-            model = _GradientBoostingRegressor(**kwargs)
-        if name == MODEL_SVR:
-            model = _SVR(**kwargs)
-        if name == MODEL_XGBRegressor:
-            model = _XGBRegressor(**kwargs)
-
-        if model is None:
-            print(f'[*] - Modèle non implémenté.')
-
-        return model
 
     def evaluateRegression(self, model, X_data, y_data, y_pred):
         """ Permet d'afficher les métrics pour une régression"""
@@ -155,16 +120,149 @@ class Workspace():
         idx = 1
         for graph in graphs:
 
-            true_data, predict_data, color = graph
+            true_data, predict_data, color, title = graph
 
             plt.subplot(count_rows, count_cols, idx)
             plt.scatter(true_data, predict_data, c=color, label='Predicted')
             plt.plot([min(true_data), max(true_data)], [min(true_data), max(true_data)], '--k', lw=2)
-            plt.title("Training Results")
+            plt.title(title)
             plt.xlabel("Actual Values")
             plt.ylabel("Predicted Values")
 
             idx+=1
 
         plt.tight_layout()
+        plt.show()
+
+    def saveModel(self, model, path, info=""):
+        ''' Permet de sauvegarder un model '''
+        m = copy.deepcopy(model)
+
+        with open(path, 'wb') as f:
+            pickle.dump(m, f)
+
+    def loadModel(self, path):
+        ''' Permet de charger un modèle depuis un fichier '''
+
+        with open(path, 'rb') as f:
+            model = pickle.load(f)
+
+        return model
+
+    def getBestModel(self, preprocessing, model_params, X_train, y_train, verbose=0):
+        """ Permet de lancer un gridSearchCV sur un ensemble de modèle passés en paramètres """
+
+        scores = []
+        instances = {}
+
+        for model_name, mp in model_params.items():
+
+            pipeline = make_pipeline(*preprocessing, mp['model'])
+            if verbose > 0:
+                print(f"[*] - Model : {model_name}")
+                print(pipeline)
+
+            clf =  GridSearchCV(pipeline, mp['params'], cv=5, return_train_score=True, refit=True, verbose=verbose)
+            clf.fit(X_train, y_train)
+
+            results = clf.cv_results_
+            path_result_csv = f"./runtime/results_grid_csv_{model_name}.csv"
+            _df = pd.DataFrame(results)
+            _df.to_csv(path_result_csv)
+            if verbose > 0:
+                print(f"[*] - Saving grid result to {path_result_csv}")
+
+            if "show_learning_curve" in mp and mp['show_learning_curve'] == True:
+                self.learning_curve(clf.best_estimator_, X_train, y_train)
+                # self.showGraphParamGrid(clf, model_name, _df) # BETA
+
+            scores.append({
+                'model': model_name,
+                'best_score': clf.best_score_,
+                'best_params': clf.best_params_
+            })
+
+            instances[model_name] = clf
+            if verbose > 0:
+                print("\n")
+
+        if verbose > 0:
+            print("[*] - Done.")
+
+        df = pd.DataFrame(scores,columns=['model','best_score','best_params'])
+        df = df.sort_values(by=['best_score'], ascending=False)
+
+        best_model_name = df.iloc[0]['model']
+        best_model = instances[best_model_name]
+        path_model = f'./runtime/best_model_{tools.get_format_date(pattern="%d_%m_%Y_%H_%M_%S")}.model'
+
+        if verbose > 0:
+            print(f"[*] - Saving model to {path_model}")
+
+        self.saveModel(best_model, path_model)
+
+        return path_model, best_model, df
+
+
+    def showGraphParamGrid(self, clf, model_name, _df):
+        """ Permet de visualiser les courbes de scores pour chaque paramètre d'un grid search CV """
+
+        print("DICT PARAMS : ", clf.param_grid)
+        params = clf.param_grid
+
+        fig, ax = plt.subplots(1,len(params),figsize=(20,5))
+        fig.suptitle(f'Score per parameter of {model_name}')
+        fig.text(0.04, 0.5, 'MEAN SCORE', va='center', rotation='vertical')
+
+        for i, p in enumerate(params):
+            # print("--> : ", p, params[p])
+            name = p.split("__")
+
+            x = np.array([ str(a) for a in params[p] ])
+            axis_y_train = []
+            axis_y_test = []
+            y_train_e = []
+            y_test_e = []
+
+            for param_value in params[p]:
+                # print(f"Param Value : {param_value}")
+                values_train = _df[_df[f"param_{p}"] == param_value]['mean_train_score'].agg(['min', 'max', 'mean'])
+                values_train = np.where(np.isnan(values_train), 0, np.array(values_train))
+                axis_y_train.append(values_train[2])
+                y_train_e.append(values_train[1] - values_train[0])
+
+                values_test = _df[_df[f"param_{p}"] == param_value]['mean_test_score'].agg(['min', 'max', 'mean'])
+                values_test = np.where(np.isnan(values_test), 0, np.array(values_test))
+                axis_y_test.append(values_test[2])
+                y_test_e.append(values_test[1] - values_test[0])
+
+            # print("----->" , x, y,y_e)
+
+            if len(params) == 1:
+                ax.errorbar(
+                    x=x,
+                    y=axis_y_train,
+                    yerr=y_train_e,
+                    label='train_score'
+                )
+                ax.errorbar(
+                    x=x,
+                    y=axis_y_test,
+                    yerr=y_test_e,
+                    label='test_score'
+                )
+                ax.set_xlabel(name[1].upper())
+            else:
+                ax[i].errorbar(
+                    x=x,
+                    y=axis_y_train,
+                    yerr=y_train_e,
+                )
+                ax[i].errorbar(
+                    x=x,
+                    y=axis_y_test,
+                    yerr=y_test_e,
+                )
+                ax[i].set_xlabel(name[1].upper())
+
         plt.show()

@@ -1,6 +1,13 @@
 import nnz.tools as tools
 from nnz.workspace import Workspace
-from nnz.workspace import MODEL_LinearRegression, MODEL_GradientBoostingRegressor, MODEL_RandomForestRegressor, MODEL_SVR, MODEL_XGBRegressor
+from sklearn.preprocessing import MinMaxScaler, StandardScaler, Normalizer
+from sklearn.pipeline import make_pipeline
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.svm import SVR
+from sklearn.model_selection import GridSearchCV
+from xgboost import XGBRegressor
+
 from nnz.dataset import Dataset
 import os
 import math
@@ -12,8 +19,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+import warnings
 
-
+pd.set_option('display.max_colwidth', None)
+warnings.filterwarnings("ignore")
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
 

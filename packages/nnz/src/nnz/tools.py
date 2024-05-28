@@ -1,6 +1,9 @@
 import os, sys, traceback
 import datetime
 import nnz.config as config
+from pathlib import Path
+import numpy as np
+import shutil
 
 def create_directory(path, mode=0o750):
     """ Permet de créer un sous dossier
@@ -9,6 +12,10 @@ def create_directory(path, mode=0o750):
     """
     os.makedirs(path, mode=mode, exist_ok=True)
     return path
+
+def remove_directory(path):
+    """ Permet de supprimer un dossier même si celui-ci contient des éléments dedans """
+    shutil.rmtree(path, ignore_errors=True)
 
 def get_current_date():
     """ Permet de retourner la date actuelle
@@ -96,3 +103,13 @@ def get_item(attr, value, list):
             return (i, v)
 
     return None
+
+def list_dirs(path):
+    """ Permet de retourner une liste de répertoire présent dans le path passé en paramètre """
+    return [ str(f) for f in Path(path).iterdir() if f.is_dir()]
+
+
+def list_files(path):
+    """ Permet de retourner une liste des fichiers présents dans le path passé en paramètre, on exclus les fichiers cachés commençant par un . """
+    return [ str(file) for file in Path(path).iterdir() if file.is_file() and not file.name.startswith(".") ]
+

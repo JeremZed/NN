@@ -4,12 +4,16 @@ import nnz.tools as tools
 from nnz.dataset import Dataset
 
 import numpy as np
+import os
+import shutil
 import matplotlib.pyplot as plt
 import math
 import pandas as pd
 import pickle
 import copy
 import time
+import cv2
+import h5py
 
 
 from sklearn.pipeline import make_pipeline
@@ -31,6 +35,11 @@ class Workspace():
         self.__date_init = tools.get_current_date()
         self.__platform = platform.uname()
         self.__datasets = []
+        self.__classes = pd.read_csv('./resources/classes.csv') if os.path.exists('./resources/classes.csv') else pd.DataFrame([])
+
+    def get_classes(self):
+        """ Permet de retourner la liste des classes """
+        return self.__classes
 
     def get_date_init(self):
         """ Permet de retourner la date où le workspace a été initialisé """
@@ -266,3 +275,156 @@ class Workspace():
                 ax[i].set_xlabel(name[1].upper())
 
         plt.show()
+
+    def split_folders(self, path_src, path_dst, size_train=0.6, size_val=0.15, size_test=0.25, limit=None, random_state=123, verbose=0, shuffle=True, resize=None  ):
+        """ Permet de répartir le contenu d'un dossier contenant plusieurs classes d'images dans les dossiers train, validation, test avec un ratio
+            Le contenu du dossier d'origine doit être composé comme suit :
+                class_1/
+                    img_1.jpg
+                    img_2.jpg
+                    ...
+                class_2/
+                    img_1.jpg
+                    img_2.jpg
+                    ...
+                ...
+        """
+
+        if os.path.exists(path_src) != True:
+            raise Exception(f"Dossier source inconnu : {path_src}")
+        if os.path.exists(path_dst) != True:
+            raise Exception(f"Dossier de destination inconnu : {path_dst}")
+        if size_train + size_val + size_test != 1.0:
+                raise ValueError( f'Le cumul de size_train:{size_train}, size_val:{size_val}, size_test:{size_test} n\'est pas égal à 1.0')
+
+        last_char = path_dst[-1]
+        if last_char != "/":
+            path_dst = path_dst + "/"
+
+        train_path = path_dst + "train"
+        val_path = path_dst + "val"
+        test_path = path_dst + "test"
+
+        tools.create_directory(train_path)
+        tools.create_directory(val_path)
+        tools.create_directory(test_path)
+
+        np.random.seed(random_state)
+
+        classes_directories = tools.list_dirs(path_src)
+        classes = []
+
+        dataset_train = []
+        dataset_val = []
+        dataset_test = []
+
+        for c in classes_directories:
+            class_name = c.split("/")[-1]
+
+            train_class_path = train_path+"/"+class_name
+            val_class_path = val_path+"/"+class_name
+            test_class_path = test_path+"/"+class_name
+
+            # On supprime l'existant
+            tools.remove_directory(train_class_path)
+            tools.remove_directory(val_class_path)
+            tools.remove_directory(test_class_path)
+
+            tools.create_directory(train_class_path)
+            tools.create_directory(val_class_path)
+            tools.create_directory(test_class_path)
+
+            files = tools.list_files(c)
+
+            if limit is not None and limit < len(files):
+                files = files[:limit]
+
+            if shuffle == True:
+                np.random.shuffle(files)
+
+            total_size = len(files)
+
+            train_files, val_files, test_files = np.split(
+                files,
+                [
+                    int(total_size*size_train),
+                    int(total_size*(size_train + size_val))
+                ])
+
+            classes.append({
+                "name" : class_name,
+                "train_count" : len(train_files),
+                "val_count" : len(val_files),
+                "test_count" : len(test_files),
+            })
+
+            if verbose > 0:
+                print(class_name, len(files), "fichiers")
+                print("size_train : " , len(train_files), f"({size_train})")
+                print("size_val : ", len(val_files), f"({size_val})")
+                print("size_test : ", len(test_files), f"({size_test})")
+                print("size_total : ", (len(train_files) + len(val_files) + len(test_files)), f"({(size_train + size_val + size_test)})")
+
+            for f in train_files:
+                shutil.copy(f, train_class_path )
+                img_arr = cv2.imread(f)
+                if resize is not None:
+                    img_arr = cv2.resize(img_arr,resize)
+
+                dataset_train.append((img_arr, class_name))
+
+            if verbose > 0:
+                print(f"{len(train_files)} fichiers copiés dans {train_class_path}")
+
+            for f in val_files:
+                shutil.copy(f, val_class_path )
+                img_arr = cv2.imread(f)
+                if resize is not None:
+                    img_arr = cv2.resize(img_arr,resize)
+                dataset_val.append((img_arr, class_name))
+
+            if verbose > 0:
+                print(f"{len(val_files)} fichiers copiés dans {val_class_path}")
+
+            for f in test_files:
+                shutil.copy(f, test_class_path )
+                img_arr = cv2.imread(f)
+                if resize is not None:
+                    img_arr = cv2.resize(img_arr,resize)
+                dataset_test.append((img_arr, class_name))
+
+            if verbose > 0:
+                print(f"{len(test_files)} fichiers copiés dans {test_class_path}")
+                print("\n")
+
+        if verbose > 0:
+            print("[*] - Terminé.")
+
+        # On sauvegarde dans un fichier la liste des classes
+        df = pd.DataFrame(classes)
+        df.to_csv("./resources/classes.csv", index=False )
+        self.__classes = df
+
+        np.random.shuffle(dataset_train)
+        np.random.shuffle(dataset_val)
+        np.random.shuffle(dataset_test)
+
+        X_train = [ x[0] for x in dataset_train]
+        X_val = [ x[0] for x in dataset_val]
+        X_test = [ x[0] for x in dataset_test]
+
+        y_train = [ x[1] for x in dataset_train]
+        y_val = [ x[1] for x in dataset_val]
+        y_test = [ x[1] for x in dataset_test]
+
+        # On sauvegarde dans un fichier le dataset
+        hf = h5py.File('./resources/dataset.h5', 'w')
+        hf.create_dataset('X_train', data=X_train)
+        hf.create_dataset('y_train', data=y_train)
+        hf.create_dataset('X_val', data=X_val)
+        hf.create_dataset('y_val', data=y_val)
+        hf.create_dataset('X_test', data=X_test)
+        hf.create_dataset('y_test', data=y_test)
+        hf.close()
+
+        return np.array(X_train), np.array(y_train), np.array(X_val), np.array(y_val), np.array(X_test), np.array(y_test)

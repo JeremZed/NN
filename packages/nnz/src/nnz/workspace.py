@@ -6,6 +6,7 @@ from nnz.dataset import Dataset
 import numpy as np
 import os
 import shutil
+import matplotlib
 import matplotlib.pyplot as plt
 import math
 import pandas as pd
@@ -276,7 +277,7 @@ class Workspace():
 
         plt.show()
 
-    def split_folders(self, path_src, path_dst, size_train=0.6, size_val=0.15, size_test=0.25, limit=None, random_state=123, verbose=0, shuffle=True, resize=None  ):
+    def splitFolders(self, path_src, path_dst, size_train=0.6, size_val=0.15, size_test=0.25, limit=None, random_state=123, verbose=0, shuffle=True, resize=None  ):
         """ Permet de répartir le contenu d'un dossier contenant plusieurs classes d'images dans les dossiers train, validation, test avec un ratio
             Le contenu du dossier d'origine doit être composé comme suit :
                 class_1/
@@ -428,3 +429,101 @@ class Workspace():
         hf.close()
 
         return np.array(X_train), np.array(y_train), np.array(X_val), np.array(y_val), np.array(X_test), np.array(y_test)
+
+    def loadDatasetH5(self, path_file):
+        """ Permet de charger le contenu d'un dataset contenu dans un fichier .h5 """
+
+        if os.path.exists(path_file) == False:
+            raise Exception(f"Fichier inconnu : {path_file}")
+
+        return h5py.File(path_file, 'r')
+
+    def loadDatasetSplited(self, path_file):
+        """ Permet de récupérer le contenu splité (x_train, y_train etc...) """
+
+        hf = self.loadDatasetH5(path_file=path_file)
+
+        X_train = hf.get('X_train')
+        y_train = hf.get('y_train')
+        X_val = hf.get('X_val')
+        y_val = hf.get('y_val')
+        X_test = hf.get('X_test')
+        y_test = hf.get('y_test')
+
+        return np.array(X_train), np.array(y_train), np.array(X_val), np.array(y_val), np.array(X_test), np.array(y_test)
+
+    def loadGroupsDataset(self, path_file, groups=None):
+        """ Permet de retourner l'ensemble des groupes qui composent un dataset au format h5 """
+
+        hf = self.loadDatasetH5(path_file=path_file)
+        hf_groups = hf.keys()
+
+        items = []
+        if groups is not None:
+            for g in groups:
+                if g in hf_groups:
+                    items.append(hf.get(g))
+        else:
+            for g in hf_groups:
+                items.append(hf.get(g))
+
+        return items
+
+    def showImages(self, x, y=None, y_pred=None, classes=None, indices="all", columns=10, fontsize=8, y_padding=1.35, limit=10, path_filename_to_save=None, spines_alpha=1, title=None):
+        """ Permet d'afficher un listing d'images composant le set de données """
+        if indices == "all":
+            items = range(limit) if limit > -1 else range(len(x))
+        else:
+            items = indices
+
+        draw_labels = (y is not None)
+        draw_pred = (y_pred is not None)
+
+        rows = math.ceil(len(items)/columns)
+        fig=plt.figure(figsize=(columns, rows*y_padding))
+        n=1
+        for i in items:
+            axs=fig.add_subplot(rows, columns, n)
+            n+=1
+            # On affiche l'image avec les couleurs d'origine en convertissant le BGR produit par cv2 lors de la création vers RGB
+            # img=axs.imshow(cv2.cvtColor(x[i], cv2.COLOR_BGR2RGB)) pas compatible avec la normalisation des datas entre 0 et 1
+            img=axs.imshow(x[i][...,::-1])
+
+            label = classes[y[i]]
+            label_pred = classes[y_pred[i]] if y_pred is not None else ""
+
+            if isinstance(label, bytes):
+                label = str(label, encoding='utf-8')
+
+            if isinstance(label_pred, bytes):
+                label_pred = str(label_pred, encoding='utf-8')
+
+            if draw_labels and not draw_pred:
+                axs.set_xlabel( label,fontsize=fontsize)
+            if draw_labels and draw_pred:
+                if y[i] != y_pred[i]:
+                    axs.set_xlabel(f'{ label_pred}\n({label})',fontsize=fontsize)
+                    axs.xaxis.label.set_color('red')
+                else:
+                    axs.set_xlabel(label,fontsize=fontsize)
+
+            axs.set_yticks([])
+            axs.set_xticks([])
+
+            # gestion de la bordure d'image
+            axs.spines['right'].set_visible(True)
+            axs.spines['left'].set_visible(True)
+            axs.spines['top'].set_visible(True)
+            axs.spines['bottom'].set_visible(True)
+            axs.spines['right'].set_alpha(spines_alpha)
+            axs.spines['left'].set_alpha(spines_alpha)
+            axs.spines['top'].set_alpha(spines_alpha)
+            axs.spines['bottom'].set_alpha(spines_alpha)
+
+        if title is not None:
+            fig.suptitle(title, fontsize=14)
+
+        if path_filename_to_save is not None:
+            plt.savefig(path_filename_to_save)
+        else:
+            plt.show()

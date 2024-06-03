@@ -1,6 +1,7 @@
 import platform
 import pkg_resources
 import nnz.tools as tools
+import nnz.config as config
 from nnz.dataset import Dataset
 
 import numpy as np
@@ -21,9 +22,12 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, Normalizer
 from sklearn.model_selection import GridSearchCV
 
-from sklearn.metrics import mean_squared_error,r2_score, mean_absolute_error, explained_variance_score, root_mean_squared_error
+from sklearn.metrics import mean_squared_error,r2_score, mean_absolute_error, explained_variance_score, root_mean_squared_error, confusion_matrix, ConfusionMatrixDisplay, accuracy_score, precision_score, recall_score, f1_score
 from scipy.stats import spearmanr, pearsonr
 from sklearn.model_selection import learning_curve
+
+os.environ['KERAS_BACKEND'] = config.__env_keras__
+import keras
 
 class Workspace():
     """
@@ -144,20 +148,62 @@ class Workspace():
         plt.tight_layout()
         plt.show()
 
-    def saveModel(self, model, path, info=""):
-        ''' Permet de sauvegarder un model '''
-        m = copy.deepcopy(model)
+    def save(self, object, path, info=""):
+        ''' Permet de sauvegarder le contenu d'un objet '''
+        m = copy.deepcopy(object)
 
         with open(path, 'wb') as f:
             pickle.dump(m, f)
 
-    def loadModel(self, path):
-        ''' Permet de charger un modèle depuis un fichier '''
+    def load(self, path):
+        ''' Permet de charger un objet depuis un fichier '''
 
         with open(path, 'rb') as f:
-            model = pickle.load(f)
+            object = pickle.load(f)
 
-        return model
+        return object
+
+    def fitModel(self, model, X, y, X_val, y_val, name='model', batch_size=16, epochs=1, monitor='val_accuracy', mode='max', save_best_only=True, verbose=1 ):
+        """ Permet de lancer le fit du modèle avec les différents callback de sauvegarde du modèle """
+
+        checkpoint_filepath = f'./runtime/ckpt/checkpoint.{name}.keras'
+        model_checkpoint_callback = keras.callbacks.ModelCheckpoint(
+            filepath=checkpoint_filepath,
+            monitor=monitor,
+            mode=mode,
+            save_best_only=save_best_only)
+
+        csv_logger = keras.callbacks.CSVLogger(f'./runtime/{name}.history.log')
+
+        with open(f'./runtime/{name}.summary.json', "w") as json_file:
+            json_file.write(model.to_json())
+
+        return model.fit(  X, y,
+                      batch_size      = batch_size,
+                      epochs          = epochs,
+                      verbose         = verbose,
+                      validation_data = (X_val, y_val),
+                      callbacks=[model_checkpoint_callback, csv_logger])
+
+    def loadSummaryModel(self, name):
+        """ Permet de retourner l'architecture d'un modèle """
+
+        f = open(f'./runtime/{name}.summary.json', 'r')
+        config = f.read()
+        f.close()
+        model = keras.models.model_from_json(config)
+
+        return model.summary()
+
+    def loadModel(self, name):
+        """ Permet de charger un modèle """
+
+        checkpoint_filepath = f'./runtime/ckpt/checkpoint.{name}.keras'
+        return keras.models.load_model(checkpoint_filepath)
+
+    def loadHistory(self, name):
+        """ Permet de charger l'historique d'un entraînement """
+        return pd.read_csv(f'./runtime/{name}.history.log', sep=',', engine='python')
 
     def getBestModel(self, preprocessing, model_params, X_train, y_train, verbose=0):
         """ Permet de lancer un gridSearchCV sur un ensemble de modèle passés en paramètres """
@@ -209,7 +255,7 @@ class Workspace():
         if verbose > 0:
             print(f"[*] - Saving model to {path_model}")
 
-        self.saveModel(best_model, path_model)
+        self.save(best_model, path_model)
 
         return path_model, best_model, df
 
@@ -469,12 +515,12 @@ class Workspace():
 
         return items
 
-    def showImages(self, x, y=None, y_pred=None, classes=None, indices="all", columns=10, fontsize=8, y_padding=1.35, limit=10, path_filename_to_save=None, spines_alpha=1, title=None):
+    def showImages(self, x, classes=[], y=None, y_pred=None, indices="all", columns=10, fontsize=8, y_padding=1.35, limit=10, path_filename_to_save=None, spines_alpha=1, title=None):
         """ Permet d'afficher un listing d'images composant le set de données """
         if indices == "all":
             items = range(limit) if limit > -1 else range(len(x))
         else:
-            items = indices
+            items = indices if limit == -1 else indices[:limit]
 
         draw_labels = (y is not None)
         draw_pred = (y_pred is not None)
@@ -489,8 +535,8 @@ class Workspace():
             # img=axs.imshow(cv2.cvtColor(x[i], cv2.COLOR_BGR2RGB)) pas compatible avec la normalisation des datas entre 0 et 1
             img=axs.imshow(x[i][...,::-1])
 
-            label = classes[y[i]]
-            label_pred = classes[y_pred[i]] if y_pred is not None else ""
+            label = classes[y[i]] if y[i] < len(classes) else y[i]
+            label_pred = classes[y_pred[i]] if y_pred is not None and y_pred[i] < len(classes) else y_pred[i] if y_pred is not None else ""
 
             if isinstance(label, bytes):
                 label = str(label, encoding='utf-8')
@@ -502,7 +548,7 @@ class Workspace():
                 axs.set_xlabel( label,fontsize=fontsize)
             if draw_labels and draw_pred:
                 if y[i] != y_pred[i]:
-                    axs.set_xlabel(f'{ label_pred}\n({label})',fontsize=fontsize)
+                    axs.set_xlabel(f'{ label_pred}\n({label})\n(i={i})',fontsize=fontsize)
                     axs.xaxis.label.set_color('red')
                 else:
                     axs.set_xlabel(label,fontsize=fontsize)
@@ -527,3 +573,84 @@ class Workspace():
             plt.savefig(path_filename_to_save)
         else:
             plt.show()
+
+    def showMetrics(self, name, model=None, metrics={"Accuracy":['accuracy','val_accuracy'], 'Loss':['loss', 'val_loss']}, columns=2):
+        """ Permet de visualiser les metrics de l'apprentissage du modèle """
+
+        plt.figure(figsize=(12, 8))
+        count_cols = len(metrics)
+        count_rows = math.ceil(count_cols/columns)
+        n = 1
+        history = None
+
+        # Historique depuis une instance de modèle entraîné
+        if model is not None:
+            history = model.history
+
+        # Chargement depuis une fichier CSV
+        if name is not None and model is None:
+            history = self.loadHistory(name)
+
+        if history is None:
+            print("Historique non trouvé.")
+            return False
+
+        # for i, col in enumerate(columns):
+        for title,curves in metrics.items():
+            plt.subplot(count_rows, count_cols, n)
+            plt.title(title)
+            plt.ylabel(title)
+            plt.xlabel('Epoch')
+            for c in curves:
+                plt.plot(history[c])
+
+            plt.legend(curves, loc='upper left')
+            n+=1
+
+        plt.tight_layout()
+        plt.show()
+
+    def confusionMatrix(self, y_true, y_pred, labels):
+        """ Permet d'afficher la matrice de confusion """
+
+        title = f"Matrice de confusion"
+        labels = [ str(y, encoding='utf-8') if isinstance(y,bytes) else y for y in labels ]
+
+        y_true_converted = [ labels[y] for y in y_true ]
+        y_pred_converted = [ labels[y] for y in y_pred ]
+
+        cm = confusion_matrix( y_true_converted, y_pred_converted, normalize=None, labels=labels)
+
+        # la somme des valeurs de la diagonale divisée par la somme totale de la matrice
+        accuracy = np.trace(cm) / float(np.sum(cm))
+        misclass = 1 - accuracy
+
+        # disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=range(15))
+        fig = plt.figure(figsize=(15,15))
+        axs = fig.add_subplot(1, 1, 1)
+        axs.set_title(title, fontsize=40, pad=35)
+
+        disp = ConfusionMatrixDisplay.from_predictions(y_true_converted, y_pred_converted, normalize='true', ax=axs)
+
+        # plt.tight_layout()
+        plt.ylabel('True label')
+        plt.xlabel('Predicted label\naccuracy={:0.4f}; misclass={:0.4f}'.format(accuracy, misclass))
+        plt.tick_params(axis='x', rotation=45)
+        plt.show()
+
+        metrics = {
+            'accuracy' : accuracy_score(y_true, y_pred),
+            'precision' : precision_score(y_true, y_pred, average=None),
+            'recall' : recall_score(y_true, y_pred,average=None),
+            'f1' : f1_score(y_true, y_pred, average=None)
+        }
+
+        df = pd.DataFrame(metrics, index=labels)
+
+        return df
+
+    def showPredictionsErrors(self, x, y_true, y_pred, classes=[] ):
+        """ Permet de retourner les prédictions en erreurs """
+
+        errors=[ i for i in range(len(x)) if y_pred[i]!=y_true[i] ]
+        self.showImages(x, y=y_true, y_pred=y_pred, indices=errors, classes=classes)

@@ -1,4 +1,5 @@
 import nnz.tools as tools
+import nnz.config as config
 from nnz.workspace import Workspace
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, Normalizer, PolynomialFeatures
 from sklearn.pipeline import make_pipeline
@@ -11,7 +12,7 @@ from xgboost import XGBRegressor
 from nnz.dataset import Dataset
 import os
 import math
-os.environ['KERAS_BACKEND'] = 'torch'
+os.environ['KERAS_BACKEND'] = config.__env_keras__
 
 import keras
 import numpy as np
@@ -20,6 +21,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 import warnings
+import torch
 
 pd.set_option('display.max_colwidth', None)
 warnings.filterwarnings("ignore")

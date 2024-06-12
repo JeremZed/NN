@@ -7,7 +7,7 @@ from nnz.dataset import Dataset
 import numpy as np
 import os
 import shutil
-import matplotlib
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import math
 import pandas as pd
@@ -16,6 +16,8 @@ import copy
 import time
 import cv2
 import h5py
+from IPython.display import Image, display
+from PIL import Image as im
 
 
 from sklearn.pipeline import make_pipeline
@@ -28,6 +30,7 @@ from sklearn.model_selection import learning_curve
 
 os.environ['KERAS_BACKEND'] = config.__env_keras__
 import keras
+import tensorflow as tf
 
 class Workspace():
     """
@@ -365,7 +368,7 @@ class Workspace():
         dataset_val = []
         dataset_test = []
 
-        for c in classes_directories:
+        for i, c in enumerate(classes_directories):
             class_name = c.split("/")[-1]
 
             train_class_path = train_path+"/"+class_name
@@ -417,8 +420,9 @@ class Workspace():
                 img_arr = cv2.imread(f)
                 if resize is not None:
                     img_arr = cv2.resize(img_arr,resize)
+                    img_arr = img_arr[...,::-1]
 
-                dataset_train.append((img_arr, class_name))
+                dataset_train.append((img_arr, i))
 
             if verbose > 0:
                 print(f"{len(train_files)} fichiers copiés dans {train_class_path}")
@@ -428,7 +432,8 @@ class Workspace():
                 img_arr = cv2.imread(f)
                 if resize is not None:
                     img_arr = cv2.resize(img_arr,resize)
-                dataset_val.append((img_arr, class_name))
+                    img_arr = img_arr[...,::-1]
+                dataset_val.append((img_arr, i))
 
             if verbose > 0:
                 print(f"{len(val_files)} fichiers copiés dans {val_class_path}")
@@ -438,7 +443,8 @@ class Workspace():
                 img_arr = cv2.imread(f)
                 if resize is not None:
                     img_arr = cv2.resize(img_arr,resize)
-                dataset_test.append((img_arr, class_name))
+                    img_arr = img_arr[...,::-1]
+                dataset_test.append((img_arr, i))
 
             if verbose > 0:
                 print(f"{len(test_files)} fichiers copiés dans {test_class_path}")
@@ -533,7 +539,8 @@ class Workspace():
             n+=1
             # On affiche l'image avec les couleurs d'origine en convertissant le BGR produit par cv2 lors de la création vers RGB
             # img=axs.imshow(cv2.cvtColor(x[i], cv2.COLOR_BGR2RGB)) pas compatible avec la normalisation des datas entre 0 et 1
-            img=axs.imshow(x[i][...,::-1])
+            # img=axs.imshow(x[i][...,::-1])
+            img=axs.imshow(x[i])
 
             label = classes[y[i]] if y[i] < len(classes) else y[i]
             label_pred = classes[y_pred[i]] if y_pred is not None and y_pred[i] < len(classes) else y_pred[i] if y_pred is not None else ""
@@ -654,3 +661,195 @@ class Workspace():
 
         errors=[ i for i in range(len(x)) if y_pred[i]!=y_true[i] ]
         self.showImages(x, y=y_true, y_pred=y_pred, indices=errors, classes=classes)
+        n_errors = len(errors)
+        n_items = len(y_true)
+        ratio = n_errors / n_items
+        print(f"Nombre total d'erreur : {n_errors} / {n_items} ( {round( ratio ,4) * 100 } % ) ")
+
+        return errors
+
+    def showLayerActivation(self, model, img, name="", limit_layers="all", count_columns = 16, show_top=False, top = 3, verbose=1, labels=[]):
+        """ Permet de visualiser les couches d'activations """
+
+        fig = plt.figure(figsize=(2,2))
+        axs = fig.add_subplot(1, 1, 1)
+        # axs.imshow(img[...,::-1])
+        axs.imshow(img)
+        axs.set_yticks([])
+        axs.set_xticks([])
+        axs.set_title(f'Image : {name}')
+        plt.show()
+
+        shape = tuple(np.concatenate(([1], list(img.shape)), axis=0))
+
+        layer_outputs = [layer.output for layer in model.layers ]
+        activation_model = keras.models.Model(inputs=model.input,outputs=layer_outputs)
+        activations = activation_model.predict(img.reshape(shape), verbose=verbose)
+
+        layer_names = []
+        for layer in model.layers:
+            layer_names.append(layer.name)
+
+        for layer_name, layer_activation in zip(layer_names, activations):
+
+            try:
+                if limit_layers != "all":
+                    if limit_layers not in layer_name:
+                        continue
+
+                n_features = layer_activation.shape[-1]
+                size = layer_activation.shape[1]
+                n_cols = n_features // count_columns
+                display_grid = np.zeros((size * n_cols, count_columns * size))
+                scale = 1. / size
+
+                for col in range(n_cols):
+                    for row in range(count_columns):
+                        channel_image = layer_activation[0,:,:, col * count_columns + row]
+                        channel_image -= channel_image.mean()
+                        channel_image /= channel_image.std()
+                        channel_image *= 64
+                        channel_image += 128
+                        channel_image = np.clip(channel_image, 0, 255).astype('uint8')
+                        display_grid[col * size : (col + 1) * size, # Displays the grid
+                                    row * size : (row + 1) * size] = channel_image
+
+
+                if n_cols > 0:
+                    fig = plt.figure(figsize=(scale * display_grid.shape[1],
+                                        scale * display_grid.shape[0]))
+                    axs = fig.add_subplot(1, 1, 1)
+                    axs.imshow(img)
+                    axs.set_yticks([])
+                    axs.set_xticks([])
+                    axs.set_title(f"{layer_name}, {layer_activation.shape}")
+                    axs.imshow(display_grid, aspect='auto', cmap='viridis')
+                    plt.show()
+
+            except Exception as error:
+                print(f"Impossible de générer la couche : {layer_name}")
+                print(f"Erreur : {error}")
+                print("")
+
+
+        scores = activations[-1][0]
+        indices = np.argsort(scores)[::-1][:top]
+        names = [ labels[i] for i in indices ]
+        p = activations[-1][0][indices]
+
+        df = pd.DataFrame({'classe': names, 'score': p}, columns=['classe', 'score'])
+
+        plt.bar(x= names , height=p)
+        plt.title(f'Top {top} Predictions:')
+
+        for i in range(len(names)):
+            plt.text(i, p[i] , round(p[i], 2), ha = 'center')
+
+        return df
+
+    def make_gradcam_heatmap(self, img_array, model, last_conv_layer_name, pred_index=None):
+        """ Permet de retourner une heatmap de la couche d'activation passée en paramètre """
+
+        # Tout d'abord, nous créons un modèle qui mappe l'image d'entrée aux activations de la
+        # dernière couche de conversion ainsi qu'aux prédictions de sortie.
+        grad_model = keras.models.Model(
+            model.inputs, [model.get_layer(last_conv_layer_name).output, model.output]
+        )
+
+        # Ensuite, nous calculons le gradient de la classe supérieure prédite pour notre image
+        # d'entrée par rapport aux activations de la dernière couche de conversion.
+        with tf.GradientTape() as tape:
+            last_conv_layer_output, preds = grad_model(img_array)
+            if pred_index is None:
+                pred_index = tf.argmax(preds[0])
+            class_channel = preds[:, pred_index]
+
+        # Il s'agit du gradient du neurone de sortie (supérieur prédit ou choisi) par rapport à
+        # la carte des caractéristiques de sortie de la dernière couche de conversion.
+        grads = tape.gradient(class_channel, last_conv_layer_output)
+
+        # Il s'agit d'un vecteur où chaque entrée correspond à l'intensité moyenne du gradient
+        # sur un canal de carte de caractéristiques spécifique.
+        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+
+        # Nous multiplions chaque canal du tableau de cartes de fonctionnalités par « l'importance de ce canal »
+        # par rapport à la classe la plus prédite, puis additionnons tous les canaux pour obtenir l'activation de la classe Heatmap.
+        # le symbole arobas "@" correspond à une multiplication de matrice
+        last_conv_layer_output = last_conv_layer_output[0]
+        heatmap = last_conv_layer_output @ pooled_grads[..., tf.newaxis]
+        heatmap = tf.squeeze(heatmap)
+
+        # À des fins de visualisation, on normalise la carte thermique
+        heatmap = tf.maximum(heatmap, 0) / tf.math.reduce_max(heatmap)
+        return heatmap.numpy()
+
+    def save_and_display_gradcam(self, img_array, heatmap, cam_path=None, alpha=0.5):
+        # Load the original image
+        # img = img_array[...,::-1].reshape(128,128,3)
+        img = img_array.reshape(128,128,3)
+
+        # Rescale heatmap to a range 0-255
+        heatmap = np.uint8(255 * heatmap)
+
+        # Use jet colormap to colorize heatmap
+        jet = mpl.colormaps["jet"]
+
+        # Use RGB values of the colormap
+        jet_colors = jet(np.arange(256))[:, :3]
+        jet_heatmap = jet_colors[heatmap]
+
+        # Create an image with RGB colorized heatmap
+        jet_heatmap = keras.utils.array_to_img(jet_heatmap)
+        jet_heatmap = jet_heatmap.resize((img.shape[1], img.shape[0]))
+        jet_heatmap = keras.utils.img_to_array(jet_heatmap)
+
+        # Superimpose the heatmap on original image
+        superimposed_img_array = jet_heatmap * alpha + img
+        superimposed_img = keras.utils.array_to_img(superimposed_img_array)
+
+        # Save the superimposed image
+        if cam_path is not None:
+            superimposed_img.save(cam_path)
+            # Display Grad CAM
+            display(Image(cam_path))
+
+        else:
+            fig = plt.figure(figsize=(2,2))
+            axs = fig.add_subplot(1, 1, 1)
+            axs.imshow(superimposed_img)
+            axs.set_yticks([])
+            axs.set_xticks([])
+            axs.set_title('Grad-CAM')
+            plt.show()
+
+    def showInfosPredictions(self, model, X, y, labels, indexes=[], alpha=0.005, limit_layers="conv", show_top=True, cam_path=None, limit=10, verbose=0):
+        """ Permet de visualiser les informations de prédiction d'une ou plusieurs images (couches d'activations, tops, grad-cam) """
+
+        for i, indice in enumerate(indexes):
+
+            if i > limit and limit > -1:
+                break
+
+            df = self.showLayerActivation(model, img=X[indice], name= labels[y[indice]], limit_layers=limit_layers, show_top=show_top, labels=labels, verbose=verbose )
+
+            print(df)
+
+            image = X[indice]
+            img_array = np.expand_dims(image, axis=0)
+
+            preds = model.predict(img_array)
+            c = np.argmax(preds[0])
+
+            layers = [ l.name for l in model.layers if limit_layers in l.name ]
+            last_conv_layer_name = layers[-1]
+            heatmap = self.make_gradcam_heatmap(img_array, model, last_conv_layer_name, c)
+
+            fig = plt.figure(figsize=(2,2))
+            axs = fig.add_subplot(1, 1, 1)
+            axs.matshow(heatmap, aspect='auto', cmap='viridis')
+            axs.set_yticks([])
+            axs.set_xticks([])
+            axs.set_title('Heatmap')
+            plt.show()
+
+            self.save_and_display_gradcam(img_array, heatmap, alpha=alpha, cam_path=cam_path)

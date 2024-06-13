@@ -30,6 +30,7 @@ from sklearn.model_selection import learning_curve
 
 os.environ['KERAS_BACKEND'] = config.__env_keras__
 import keras
+from keras.src.legacy.preprocessing.image import ImageDataGenerator
 import tensorflow as tf
 
 class Workspace():
@@ -326,7 +327,7 @@ class Workspace():
 
         plt.show()
 
-    def splitFolders(self, path_src, path_dst, size_train=0.6, size_val=0.15, size_test=0.25, limit=None, random_state=123, verbose=0, shuffle=True, resize=None  ):
+    def splitFolders(self, path_src, path_dst, size_train=0.6, size_val=0.15, size_test=0.25, limit=None, random_state=123, verbose=0, shuffle=True, resize=None, augmentation_data = None, nb_augmentation = 0  ):
         """ Permet de répartir le contenu d'un dossier contenant plusieurs classes d'images dans les dossiers train, validation, test avec un ratio
             Le contenu du dossier d'origine doit être composé comme suit :
                 class_1/
@@ -401,13 +402,6 @@ class Workspace():
                     int(total_size*(size_train + size_val))
                 ])
 
-            classes.append({
-                "name" : class_name,
-                "train_count" : len(train_files),
-                "val_count" : len(val_files),
-                "test_count" : len(test_files),
-            })
-
             if verbose > 0:
                 print(class_name, len(files), "fichiers")
                 print("size_train : " , len(train_files), f"({size_train})")
@@ -415,14 +409,33 @@ class Workspace():
                 print("size_test : ", len(test_files), f"({size_test})")
                 print("size_total : ", (len(train_files) + len(val_files) + len(test_files)), f"({(size_train + size_val + size_test)})")
 
+            if augmentation_data is not None:
+                datagen = ImageDataGenerator(**augmentation_data)
+                nb_augmentation = 1 if nb_augmentation == 0 else nb_augmentation
+            else:
+                datagen = None
+
             for f in train_files:
                 shutil.copy(f, train_class_path )
                 img_arr = cv2.imread(f)
                 if resize is not None:
                     img_arr = cv2.resize(img_arr,resize)
-                    img_arr = img_arr[...,::-1]
 
+                img_arr = img_arr[...,::-1]
+
+                # Image originale
                 dataset_train.append((img_arr, i))
+
+                # Images augmentées
+                if datagen is not None:
+                    _x = img_arr.reshape((1,) + img_arr.shape)
+                    t = datagen.flow(_x, batch_size=1)
+                    _i = 0
+                    for batch in t:
+                        dataset_train.append((batch[0], i))
+                        _i+=1
+                        if _i % nb_augmentation == 0:
+                            break
 
             if verbose > 0:
                 print(f"{len(train_files)} fichiers copiés dans {train_class_path}")
@@ -432,7 +445,9 @@ class Workspace():
                 img_arr = cv2.imread(f)
                 if resize is not None:
                     img_arr = cv2.resize(img_arr,resize)
-                    img_arr = img_arr[...,::-1]
+
+                img_arr = img_arr[...,::-1]
+
                 dataset_val.append((img_arr, i))
 
             if verbose > 0:
@@ -443,12 +458,25 @@ class Workspace():
                 img_arr = cv2.imread(f)
                 if resize is not None:
                     img_arr = cv2.resize(img_arr,resize)
-                    img_arr = img_arr[...,::-1]
+
+                img_arr = img_arr[...,::-1]
                 dataset_test.append((img_arr, i))
 
             if verbose > 0:
                 print(f"{len(test_files)} fichiers copiés dans {test_class_path}")
                 print("\n")
+
+            if nb_augmentation > 0:
+                c_train = len(train_files) + (len(train_files) * nb_augmentation)
+            else:
+                c_train = len(train_files)
+
+            classes.append({
+                "name" : class_name,
+                "train_count" : c_train,
+                "val_count" : len(val_files),
+                "test_count" : len(test_files),
+            })
 
         if verbose > 0:
             print("[*] - Terminé.")

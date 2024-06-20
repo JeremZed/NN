@@ -1,37 +1,48 @@
-import platform
-import pkg_resources
 import nnz.tools as tools
-import nnz.config as config
-from nnz.dataset import Dataset
-
-import numpy as np
+import nnz.dataset  as dataset
+import nnz.project.factory as factory
+import nnz.config as conf
+import platform
 import os
-import shutil
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import math
-import pandas as pd
-import pickle
-import copy
-import time
-import cv2
-import h5py
-from IPython.display import Image, display
-from PIL import Image as im
+import json
+import pkg_resources
 
 
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import MinMaxScaler, StandardScaler, Normalizer
-from sklearn.model_selection import GridSearchCV
+# import platform
+# import pkg_resources
+# import nnz.tools as tools
+# import nnz.config as config
+# from nnz.dataset import Dataset
 
-from sklearn.metrics import mean_squared_error,r2_score, mean_absolute_error, explained_variance_score, root_mean_squared_error, confusion_matrix, ConfusionMatrixDisplay, accuracy_score, precision_score, recall_score, f1_score
-from scipy.stats import spearmanr, pearsonr
-from sklearn.model_selection import learning_curve
+# import numpy as np
+# import os
+# import shutil
+# import matplotlib as mpl
+# import matplotlib.pyplot as plt
+# import math
+# import pandas as pd
+# import pickle
+# import copy
+# import time
+# import cv2
+# import h5py
+# from IPython.display import Image, display
+# from PIL import Image as im
 
-os.environ['KERAS_BACKEND'] = config.__env_keras__
-import keras
-from keras.src.legacy.preprocessing.image import ImageDataGenerator
-import tensorflow as tf
+
+# from sklearn.pipeline import make_pipeline
+# from sklearn.preprocessing import MinMaxScaler, StandardScaler, Normalizer
+# from sklearn.model_selection import GridSearchCV
+
+# from sklearn.metrics import mean_squared_error,r2_score, mean_absolute_error, explained_variance_score, root_mean_squared_error, confusion_matrix, ConfusionMatrixDisplay, accuracy_score, precision_score, recall_score, f1_score
+# from scipy.stats import spearmanr, pearsonr
+# from sklearn.model_selection import learning_curve
+
+# os.environ['KERAS_BACKEND'] = config.__env_keras__
+# import keras
+# from keras.src.legacy.preprocessing.image import ImageDataGenerator
+# import tensorflow as tf
+
 
 class Workspace():
     """
@@ -39,60 +50,139 @@ class Workspace():
     """
     def __init__(self):
 
-        self.__dir_runtime = tools.create_directory("./runtime")
-        self.__dir_resources = tools.create_directory("./resources")
-        self.__date_init = tools.get_current_date()
+        self.__dir_runtime = None
+        self.__dir_resources = None
+        self.__dir_models = None
+        self.__dir_datasets = None
+        self.__dir_notebooks = None
         self.__platform = platform.uname()
         self.__datasets = []
-        self.__classes = pd.read_csv('./resources/classes.csv') if os.path.exists('./resources/classes.csv') else pd.DataFrame([])
+        self.__projects = []
+        self.__models = []
+        # self.__classes = self.modules.get('pd').read_csv('./resources/classes.csv') if self.modules.get('os').path.exists('./resources/classes.csv') else self.modules.get('pd').DataFrame([])
 
-    def get_classes(self):
-        """ Permet de retourner la liste des classes """
-        return self.__classes
+        self.create_directories()
 
-    def get_date_init(self):
-        """ Permet de retourner la date où le workspace a été initialisé """
-        return self.__date_init
+        if os.path.exists(conf.__path_filename_workspace__) == False:
+            self.load_informations()
 
-    def show_informations(self):
+    # def get_classes(self):
+    #     """ Permet de retourner la liste des classes """
+    #     return self.__classes
+
+    # def import_modules(self):
+    #     """ Permet d'importer dynamiquement les modules nécessaire au workspace """
+
+    #     for i, m in enumerate(conf.__base_modules__):
+    #         if 'as' in m:
+    #             self.modules[m['as']] = importlib.import_module(m['name'])
+    #         else:
+    #             self.modules[m['name']] = importlib.import_module(m['name'])
+
+    def create_directories(self):
+        """ Permet de construire la stucture de fichiers du workspace """
+        self.__dir_runtime = tools.create_directory(conf.__path_dir_runtime__)
+        self.__dir_notebooks = tools.create_directory(conf.__path_dir_runtime_notebooks__)
+        self.__dir_resources = tools.create_directory(conf.__path_dir_resources__)
+        self.__dir_models = tools.create_directory(conf.__path_dir_models__)
+        self.__dir_datasets = tools.create_directory(conf.__path_dir_datasets__)
+
+    def load_informations(self):
+
+        if os.path.exists(conf.__path_filename_workspace__) == False:
+
+            infos = {
+                'dt_create' : tools.get_current_date(),
+                'dt_last_loading' : tools.get_current_date(),
+                'paths' : {
+                    'runtime' : self.__dir_runtime,
+                    'resources' : self.__dir_resources,
+                    'models' : self.__dir_models,
+                    'datasets' : self.__dir_datasets,
+                    'notebooks' : self.__dir_notebooks
+                },
+                'machine' : self.__platform,
+                'packages' : list(pkg_resources.working_set),
+                'project_count' : len(self.__projects)
+            }
+        else:
+            infos = tools.read_object_from_file(conf.__path_filename_workspace__)
+
+            infos['dt_last_loading'] = tools.get_current_date()
+            infos['packages'] = list(pkg_resources.working_set)
+            infos['project_count'] = len(self.__projects)
+
+        tools.write_object_to_file(conf.__path_filename_workspace__, infos)
+
+    def show_informations(self, reload=False, show_packages=False):
         """ Permet d'afficher l'ensemble des informations du worskpace """
 
+        if os.path.exists(conf.__path_filename_workspace__) == False or reload == True:
+            self.load_informations()
+
+        infos = tools.read_object_from_file(conf.__path_filename_workspace__)
+
         print(f'\n{tools.get_fill_string()}')
-        print(f"- Date : {self.__date_init}")
-        print(f"- Répertoire runtime : {self.__dir_runtime}")
-        print(f"- Machine : {self.__platform}")
+        print(f"- Date de création : {infos['dt_create']}")
+        print(f"- Date du dernier rafraîchissement des données : {infos['dt_last_loading']}")
+        print(f"- Répertoire runtime : {infos['paths']['runtime']}")
+        print(f"- Répertoire resources : {infos['paths']['resources']}")
+        print(f"- Répertoire des modèles : {infos['paths']['models']}")
+        print(f"- Répertoire des notebooks : {infos['paths']['notebooks']}")
+        print(f"- Machine : {infos['machine']}")
+        print(f"- Nombre de projet : {infos['project_count']}")
         print(f'{tools.get_fill_string()}\n')
-        print(f'\n{tools.get_fill_string()}')
-        print(f"Liste des modules python installés :")
-        print(f'{tools.get_fill_string()}\n')
 
-        installed_packages = pkg_resources.working_set
-        for package in installed_packages:
-            print(f"{package.key}=={package.version}")
+        if show_packages == True:
+
+            print(f'\n{tools.get_fill_string()}')
+            print(f"Liste des modules python installés :")
+            print(f'{tools.get_fill_string()}\n')
+
+            installed_packages = pkg_resources.working_set
+            for package in installed_packages:
+                print(f"{package.key}=={package.version}")
 
 
-    def add_dataset(self, name, dataset,  **kwargs):
-        """ Permet d'ajouter un nouveau dataset au work """
-        self.__datasets.append({ "name" : name, "dataset" : Dataset(dataset, **kwargs) })
-        return self.get_dataset(name)
+    ################## DATASET #############################
 
-    def clear_datasets(self):
-        """ Permet de vider la liste des datasets """
-        self.__datasets = []
+    # def add_dataset(self, name, dataset,  **kwargs):
+    #     """ Permet d'ajouter un nouveau dataset au work """
+    #     self.__datasets.append({ "name" : name, "dataset" : self.modules['dataset'].Dataset(dataset, **kwargs) })
+    #     return self.get_dataset(name)
 
-    def remove_dataset(self, name):
-        """ Permet de supprimer un dataset de la liste """
-        d = tools.get_item("name", name, self.__datasets)
-        if d is not None:
-            del self.__datasets[d[0]]
+    # def get_dataset(self, name="__all__"):
+    #     """ Getter de l'attribut __datasets """
+    #     if name == "__all__":
+    #         return self.__datasets
+    #     else:
+    #         d = self.modules['tools'].get_item("name", name, self.__datasets)
+    #         return d[1]['dataset'] if d is not None else None
 
-    def get_dataset(self, name="__all__"):
-        """ Getter de l'attribut __datasets """
+    # def clear_datasets(self):
+    #     """ Permet de vider la liste des datasets """
+    #     self.__datasets = []
+
+    # def remove_dataset(self, name):
+    #     """ Permet de supprimer un dataset de la liste """
+    #     d = self.modules['tools'].get_item("name", name, self.__datasets)
+    #     if d is not None:
+    #         del self.__datasets[d[0]]
+
+    ################## PROJECT #############################
+
+    def add_project(self, name=None, type=None):
+        """ Permet d'ajouter un projet au workspace """
+        self.__projects.append({ "name" : name, "project" : factory.ProjectFactory(type=type) })
+        return self.get_project(name)
+
+    def get_project(self, name="__all__"):
+        """ Getter de l'attribut __projects """
         if name == "__all__":
-            return self.__datasets
+            return self.__projects
         else:
-            d = tools.get_item("name", name, self.__datasets)
-            return d[1]['dataset'] if d is not None else None
+            d = tools.get_item("name", name, self.__projects)
+            return d[1]['project'].instance if d is not None else None
 
 
     def evaluateRegression(self, model, X_data, y_data, y_pred):

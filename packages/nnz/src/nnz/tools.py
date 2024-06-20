@@ -4,6 +4,9 @@ import nnz.config as config
 from pathlib import Path
 import numpy as np
 import shutil
+import json
+import copy
+import pickle
 
 def create_directory(path, mode=0o750):
     """ Permet de créer un sous dossier
@@ -113,3 +116,23 @@ def list_files(path):
     """ Permet de retourner une liste des fichiers présents dans le path passé en paramètre, on exclus les fichiers cachés commençant par un . """
     return [ str(file) for file in Path(path).iterdir() if file.is_file() and not file.name.startswith(".") ]
 
+def read_object_from_file(filepath):
+    """ Permet de retourner le content d'un fichier """
+
+    if os.path.exists(filepath) == True:
+
+        with open(filepath, 'rb') as f:
+            object = pickle.load(f)
+
+        return object
+
+    else:
+        raise Exception(f"Fichier {filepath} non trouvé.")
+
+def write_object_to_file(filepath, data):
+    """ Permet de retourner le content d'un fichier """
+
+    m = copy.deepcopy(data)
+
+    with open(filepath, 'wb') as f:
+        pickle.dump(m, f)

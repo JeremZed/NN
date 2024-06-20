@@ -11,17 +11,21 @@ from IPython.display import display, Markdown
 import math
 import scipy.stats as st
 
-
 class Dataset():
 
-    def __init__(self, data, t="array", sep=","):
+    def __init__(self, name, data, t="array", sep=","):
         self.is_dataframe = False
         self.rollback_scaler = None
         self.w = None
 
+        self.name = name
+        self.csv_info = None
+        self.data = data
+
         if isinstance(data, str) :
             if t == "csv":
-                self.df = self.__loadDatasetCSV(data, sep=sep)
+                self.df = self.__load_dataset_CSV(data, sep=sep)
+                self.csv_info = { "filepath" : data, "separator" : sep }
         else:
             if len(data.shape) <= 2:
                 if t == "array":
@@ -36,26 +40,118 @@ class Dataset():
         self.is_dataframe = True
         return pd.DataFrame(data)
 
-    def __loadDatasetCSV(self, path, sep=","):
+    def __load_dataset_CSV(self, path, sep=","):
         ''' Permet de charger le dataset en fonction du chemin du fichier CSV passé en paramètre via pandas'''
         self.is_dataframe = True
         return pd.read_csv(path, sep=sep)
 
-    def getCountRowColumns(self):
+
+
+
+
+
+
+
+
+    def get_count_row_columns(self):
         ''' Permet de retourner le nombre de ligne et de colonne du dataset '''
         s = self.df.shape
         return { 'rows' : s[0], 'columns' : s[1] }
 
-    def getTypesVariables(self, type="all"):
+    def get_types_variables(self, type="all"):
         ''' Permet de retourner les types des variables du dataset '''
         if type == "count":
             return self.df.dtypes.value_counts()
         else:
             return self.df.dtypes
 
-    def getCountDuplicatedRows(self):
+    def get_count_duplicated_rows(self):
         """ Permet de retourner le nombre de ligne identique """
         return self.df.duplicated().sum()
+
+    def get_count_unique_value_by_variable(self):
+        """ Permet de récupérer le nombre de valeur unique par variable"""
+        return self.df.nunique()
+
+    def show_duplicated_row_by_variable(self, column=None):
+        """ Permet de retourner les lignes ayant les mêmes valeurs en fonction des colonnes passées en paramètre """
+
+        if column is not None:
+            # display(Markdown(f'<b>Colonne : {column}</b>'))
+            print(self.df.loc[ self.df[column].duplicated(keep=False), : ])
+            print("\n")
+
+    def desc(self):
+        """ Retourne la description statistique du dataset """
+        return self.df.describe(include="all")
+
+    def get_ratio_missing_values(self, show_heatmap=False):
+        ''' Permet de retourner le ratio de valeur manquante pour chaque variable '''
+
+        a = self.df.isna().sum() / self.df.shape[0]
+        df = pd.DataFrame(a, columns=['ratio'])
+        df['sum'] = self.df.isna().sum()
+
+        if show_heatmap == True:
+            self.show_heatmap_nan_value()
+
+        return df.sort_values('ratio', ascending=False)
+
+    def show_heatmap_nan_value(self, cbar=True):
+        ''' Permet de produire une image de l'ensemble du dataset pour visualiser les valeurs manquantes '''
+        plt.figure(figsize=(20,10))
+        plt.title("Représentation des valeurs manquante.")
+        sns.heatmap( self.df.isna(), cbar=cbar )
+        plt.show()
+
+    def show_count_values_by_variable(self, ascending=True):
+        """ Permet d'afficher le nombre d'occurence ayant les mêmes valeurs pour chaque variable """
+        if isinstance(self.df, pd.DataFrame) :
+            for col in self.df.columns:
+                print(self.df[col].value_counts().sort_values(ascending=ascending))
+        else:
+            print("Fonctionne uniquement avec un DataFrame")
+
+
+    def split(self, target, size_train=0.6, size_val=0.15, size_test=0.25, random_state=123, stratify=None, verbose=0):
+        """ Permet de spliter un df en 3 partie train, validation, test  """
+        if size_train + size_val + size_test != 1.0:
+            raise ValueError( f'Le cumul de size_train:{size_train}, size_val:{size_val}, size_test:{size_test} n\'est pas égal à 1.0')
+
+        if target not in self.df.columns:
+            raise ValueError(f'La colonne : {target} n\'est pas présente dans le dataframe')
+
+        X = self.df.drop(target, axis=1)
+        y = self.df[target]
+
+        y_stratify = None
+        if stratify is not None:
+            y_stratify = y
+
+        X_train, X_temp, y_train, y_temp = train_test_split(X, y, stratify=y_stratify, test_size=(1.0 - size_train), random_state=random_state)
+
+        size_rest = size_test / (size_val + size_test)
+
+        y_stratify_temp = None
+        if stratify is not None:
+            y_stratify_temp = y_temp
+
+        X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, stratify=y_stratify_temp,test_size=size_rest,random_state=random_state)
+
+        assert len(self.df) == len(X_train) + len(X_val) + len(X_test)
+
+        if verbose > 0:
+            print(f"Ratio : size_train={size_train}, size_val={size_val}, size_test={size_test}")
+            print(f"Shape Trainset => X : {X_train.shape} y : {y_train.shape}")
+            print(f"Shape Valset => X : {X_val.shape} y : {y_val.shape}")
+            print(f"Shape Testset => X : {X_test.shape} y : {y_test.shape}")
+
+        return X_train, y_train, X_val, y_val, X_test, y_test
+
+
+
+
+
 
     def calculateOutliersZscore(self, columns=[], threshold_z = 3):
         """ Permet de retourner un df représentant les outliers dans les colonnes passées en paramètres """
@@ -75,41 +171,6 @@ class Dataset():
         for col in self.df[columns].columns:
             sns.boxplot(self.df[col], showfliers= True)
             plt.show()
-
-    def showDuplicatedRowByVariable(self, column=None):
-        """ Permet de retourner les lignes ayant les mêmes valeurs en fonction des colonnes passées en paramètre """
-
-        if column is not None:
-            display(Markdown(f'<b>Colonne : {column}</b>'))
-            print(self.df.loc[ self.df[column].duplicated(keep=False), : ])
-            print("\n")
-
-    def getUniqueValueByVariable(self):
-        """ Permet de récupérer le nombre de valeur unique par variable"""
-        return self.df.nunique()
-
-    def desc(self):
-        """ Retourne la description statistique du dataset """
-        return self.df.describe(include="all")
-
-    def showHeatmapNanValue(self, cbar=True):
-        ''' Permet de produire une image de l'ensemble du dataset pour visualiser les valeurs manquantes '''
-        plt.figure(figsize=(20,10))
-        plt.title("Représentation des valeurs manquante.")
-        sns.heatmap( self.df.isna(), cbar=cbar )
-        plt.show()
-
-    def getRatioMissingValues(self, show_heatmap=False):
-        ''' Permet de retourner le ratio de valeur manquante pour chaque variable '''
-
-        a = self.df.isna().sum() / self.df.shape[0]
-        df = pd.DataFrame(a, columns=['ratio'])
-        df['sum'] = self.df.isna().sum()
-
-        if show_heatmap == True:
-            self.heatmapNanValue()
-
-        return df.sort_values('ratio', ascending=False)
 
     def showHistoVariable(self, columns=[], excludes=[], discrete=False, show_table=False):
         ''' Permet d'afficher un graphique de la distribution numérique des variables '''
@@ -177,13 +238,7 @@ class Dataset():
         plt.tight_layout()
         plt.show()
 
-    def showCountValuesByVariable(self, ascending=True, by="values"):
-        """ Permet d'afficher le nombre d'occurence ayant les mêmes valeurs pour chaque variable """
-        if isinstance(self.df, pd.DataFrame) :
-            for col in self.df.columns:
-                print(self.df[col].value_counts().sort_values(ascending=ascending))
-        else:
-            print("Fonctionne uniquement avec un DataFrame")
+
 
     def normalize(self):
         """ Permet de normaliser le dataset """
@@ -536,40 +591,6 @@ class Dataset():
                 print("-"*100)
                 print("\n")
 
-    def split(self, target, size_train=0.6, size_val=0.15, size_test=0.25, random_state=123, stratify=None, verbose=0):
-        """ Permet de spliter un df en 3 partie train, validation, test  """
-        if size_train + size_val + size_test != 1.0:
-            raise ValueError( f'Le cumul de size_train:{size_train}, size_val:{size_val}, size_test:{size_test} n\'est pas égal à 1.0')
-
-        if target not in self.df.columns:
-            raise ValueError(f'La colonne : {target} n\'est pas présente dans le dataframe')
-
-        X = self.df.drop(target, axis=1)
-        y = self.df[target]
-
-        y_stratify = None
-        if stratify is not None:
-            y_stratify = y
-
-        X_train, X_temp, y_train, y_temp = train_test_split(X, y, stratify=y_stratify, test_size=(1.0 - size_train), random_state=random_state)
-
-        size_rest = size_test / (size_val + size_test)
-
-        y_stratify_temp = None
-        if stratify is not None:
-            y_stratify_temp = y_temp
-
-        X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, stratify=y_stratify_temp,test_size=size_rest,random_state=random_state)
-
-        assert len(self.df) == len(X_train) + len(X_val) + len(X_test)
-
-        if verbose > 0:
-            print(f"Ratio : size_train={size_train}, size_val={size_val}, size_test={size_test}")
-            print(f"Shape Trainset => X : {X_train.shape} y : {y_train.shape}")
-            print(f"Shape Valset => X : {X_val.shape} y : {y_val.shape}")
-            print(f"Shape Testset => X : {X_test.shape} y : {y_test.shape}")
-
-        return X_train, y_train, X_val, y_val, X_test, y_test
 
 
     def getCategoricalVariableEncoded(self, columns=[], excludes=[], encoder="one-hot"):

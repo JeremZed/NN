@@ -1,6 +1,10 @@
 from nnz.project.project import Project
 
-class ProjectNNClassifier(Project):
+class ProjectNN(Project):
+    def __init__(self, name=None):
+        super().__init__(name=name)
 
-    def __init__(self):
-        super().__init__()
+class ProjectNNClassifier(ProjectNN):
+
+    def __init__(self, name=None):
+        super().__init__(name=name)

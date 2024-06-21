@@ -15,8 +15,8 @@ from sklearn.decomposition import PCA
 class ProjectData(Project):
     """ Classe représentant un projet d'analyse de données """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, name=None):
+        super().__init__(name=name)
 
     def get_count_row_columns(self):
         """ Permet de retourner le nombre de ligne et de colonne du dataset """

@@ -11,19 +11,19 @@ class ProjectFactory:
         self.instance = None
 
         if type == nnz.PROJECT_TYPE_DATA:
-            self.instance = ProjectData()
+            self.instance = ProjectData(name=name)
 
         elif type == nnz.PROJECT_TYPE_ML_PREDICTION:
             self.instance = ProjectMLPrediction(name=name, **kwargs)
 
         elif type == nnz.PROJECT_TYPE_ML_CLASSIFIER:
-            self.instance = ProjectMLClassifier()
+            self.instance = ProjectMLClassifier(name=name)
 
         elif type == nnz.PROJECT_TYPE_NN_CLASSIFIER:
-            self.instance = ProjectNNClassifier()
+            self.instance = ProjectNNClassifier(name=name)
 
         elif type == nnz.PROJECT_TYPE_YOLO_CLASSIFIER:
-            self.instance = ProjectYoloClassifier()
+            self.instance = ProjectYoloClassifier(name=name)
 
         elif type == nnz.PROJECT_TYPE_YOLO_DETECTION:
-            self.instance = ProjectYoloDetection()
+            self.instance = ProjectYoloDetection(name=name)

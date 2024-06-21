@@ -13,6 +13,9 @@ import math
 import pickle
 import copy
 
+import warnings
+warnings.filterwarnings('ignore')
+
 class ProjectML(Project):
     def __init__(self, name=None):
         super().__init__(name=name)
@@ -34,8 +37,8 @@ class ProjectML(Project):
 
 class ProjectMLClassifier(ProjectML):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, name=None):
+        super().__init__(name=name)
 
 
 class ProjectMLPrediction(ProjectML):
@@ -112,7 +115,7 @@ class ProjectMLPrediction(ProjectML):
         scores = []
         instances = {}
 
-        path_dir = f'{config.__path_dir_runtime__}/{self.name}/{tools.get_format_date(pattern="%d_%m_%Y_%H_%M_%S")}'
+        path_dir = f'{config.__path_dir_runtime__}/{self.name}/{tools.get_format_date(pattern="%Y_%m_%d_%H_%M_%S")}'
 
         # Création du répertoire d'exécution
         tools.create_directory(path_dir)

@@ -10,13 +10,13 @@ PROJECT_TYPE_YOLO_DETECTION = "yolo-detection"
 
 # import nnz.tools as tools
 # import nnz.config as config
-# from sklearn.preprocessing import MinMaxScaler, StandardScaler, Normalizer, PolynomialFeatures
-# from sklearn.pipeline import make_pipeline
-# from sklearn.linear_model import LinearRegression
-# from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-# from sklearn.svm import SVR
-# from sklearn.model_selection import GridSearchCV
-# from xgboost import XGBRegressor
+from sklearn.preprocessing import MinMaxScaler, StandardScaler, Normalizer, PolynomialFeatures
+from sklearn.pipeline import make_pipeline
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.svm import SVR
+from sklearn.model_selection import GridSearchCV
+from xgboost import XGBRegressor
 
 # from nnz.dataset import Dataset
 # import os

@@ -144,36 +144,11 @@ class Workspace():
                 print(f"{package.key}=={package.version}")
 
 
-    ################## DATASET #############################
-
-    # def add_dataset(self, name, dataset,  **kwargs):
-    #     """ Permet d'ajouter un nouveau dataset au work """
-    #     self.__datasets.append({ "name" : name, "dataset" : self.modules['dataset'].Dataset(dataset, **kwargs) })
-    #     return self.get_dataset(name)
-
-    # def get_dataset(self, name="__all__"):
-    #     """ Getter de l'attribut __datasets """
-    #     if name == "__all__":
-    #         return self.__datasets
-    #     else:
-    #         d = self.modules['tools'].get_item("name", name, self.__datasets)
-    #         return d[1]['dataset'] if d is not None else None
-
-    # def clear_datasets(self):
-    #     """ Permet de vider la liste des datasets """
-    #     self.__datasets = []
-
-    # def remove_dataset(self, name):
-    #     """ Permet de supprimer un dataset de la liste """
-    #     d = self.modules['tools'].get_item("name", name, self.__datasets)
-    #     if d is not None:
-    #         del self.__datasets[d[0]]
-
     ################## PROJECT #############################
 
-    def add_project(self, name=None, type=None):
+    def add_project(self, name=None, type=None, **kwargs):
         """ Permet d'ajouter un projet au workspace """
-        self.__projects.append({ "name" : name, "project" : factory.ProjectFactory(type=type) })
+        self.__projects.append({ "name" : name, "project" : factory.ProjectFactory(name=name, type=type, **kwargs) })
         return self.get_project(name)
 
     def get_project(self, name="__all__"):
@@ -185,77 +160,13 @@ class Workspace():
             return d[1]['project'].instance if d is not None else None
 
 
-    def evaluateRegression(self, model, X_data, y_data, y_pred):
-        """ Permet d'afficher les métrics pour une régression"""
 
-        mse = mean_squared_error(y_data, y_pred)
-        r2_square = r2_score(y_data,y_pred)
-        mae = mean_absolute_error(y_data, y_pred)
-        sp = spearmanr(y_pred, y_data).correlation
-        pe = pearsonr(y_pred, y_data).correlation
-        ex = explained_variance_score(y_data, y_pred)
-        score = model.score(X_data, y_data)
-        rmse = root_mean_squared_error(y_data, y_pred)
 
-        print(f"R2: {r2_square}")
-        print(f'MSE: {mse}')
-        print(f'RMSE: {rmse}')
-        print(f'MAE: {mae}')
-        print(f'Spearman: {sp}')
-        print(f'Pearson: {pe}')
-        print(f'Variance: {ex}')
-        print(f'Score: {score}')
 
-    def learning_curve(self, model, X, y):
-        """ Permet d'afficher la courbe d'apprentissage du modèle """
 
-        N, train_score, val_score = learning_curve(model, X, y, train_sizes=np.linspace(0.1,1,10) )
 
-        plt.figure(figsize=(12,8))
-        plt.plot(N, train_score.mean(axis=1), label="train score")
-        plt.plot(N, val_score.mean(axis=1), label="validation score")
-        plt.title(f'Learning curve avec le model {model}')
-        plt.legend()
-        plt.show()
 
-    def showGraphPrediction(self, graphs=[] , count_cols = 2):
-        """ Permet d'afficher un graphique représentant le positionnement des prédictions par rapport à la réalité """
 
-        plt.figure(figsize=(12, 6))
-
-        count_rows = math.ceil(len(graphs) / count_cols)
-
-        idx = 1
-        for graph in graphs:
-
-            true_data, predict_data, color, title = graph
-
-            plt.subplot(count_rows, count_cols, idx)
-            plt.scatter(true_data, predict_data, c=color, label='Predicted')
-            plt.plot([min(true_data), max(true_data)], [min(true_data), max(true_data)], '--k', lw=2)
-            plt.title(title)
-            plt.xlabel("Actual Values")
-            plt.ylabel("Predicted Values")
-
-            idx+=1
-
-        plt.tight_layout()
-        plt.show()
-
-    def save(self, object, path, info=""):
-        ''' Permet de sauvegarder le contenu d'un objet '''
-        m = copy.deepcopy(object)
-
-        with open(path, 'wb') as f:
-            pickle.dump(m, f)
-
-    def load(self, path):
-        ''' Permet de charger un objet depuis un fichier '''
-
-        with open(path, 'rb') as f:
-            object = pickle.load(f)
-
-        return object
 
     def fitModel(self, model, X, y, X_val, y_val, name='model', batch_size=16, epochs=1, monitor='val_accuracy', mode='max', save_best_only=True, verbose=1 ):
         """ Permet de lancer le fit du modèle avec les différents callback de sauvegarde du modèle """
@@ -299,59 +210,7 @@ class Workspace():
         """ Permet de charger l'historique d'un entraînement """
         return pd.read_csv(f'./runtime/{name}.history.log', sep=',', engine='python')
 
-    def getBestModel(self, preprocessing, model_params, X_train, y_train, verbose=0):
-        """ Permet de lancer un gridSearchCV sur un ensemble de modèle passés en paramètres """
 
-        scores = []
-        instances = {}
-
-        for model_name, mp in model_params.items():
-
-            pipeline = make_pipeline(*preprocessing, mp['model'])
-            if verbose > 0:
-                print(f"[*] - Model : {model_name}")
-                print(pipeline)
-
-            clf =  GridSearchCV(pipeline, mp['params'], cv=5, return_train_score=True, refit=True, verbose=verbose)
-            clf.fit(X_train, y_train)
-
-            results = clf.cv_results_
-            path_result_csv = f"./runtime/results_grid_csv_{model_name}.csv"
-            _df = pd.DataFrame(results)
-            _df.to_csv(path_result_csv)
-            if verbose > 0:
-                print(f"[*] - Saving grid result to {path_result_csv}")
-
-            if "show_learning_curve" in mp and mp['show_learning_curve'] == True:
-                self.learning_curve(clf.best_estimator_, X_train, y_train)
-                # self.showGraphParamGrid(clf, model_name, _df) # BETA
-
-            scores.append({
-                'model': model_name,
-                'best_score': clf.best_score_,
-                'best_params': clf.best_params_
-            })
-
-            instances[model_name] = clf
-            if verbose > 0:
-                print("\n")
-
-        if verbose > 0:
-            print("[*] - Done.")
-
-        df = pd.DataFrame(scores,columns=['model','best_score','best_params'])
-        df = df.sort_values(by=['best_score'], ascending=False)
-
-        best_model_name = df.iloc[0]['model']
-        best_model = instances[best_model_name]
-        path_model = f'./runtime/best_model_{tools.get_format_date(pattern="%d_%m_%Y_%H_%M_%S")}.model'
-
-        if verbose > 0:
-            print(f"[*] - Saving model to {path_model}")
-
-        self.save(best_model, path_model)
-
-        return path_model, best_model, df
 
 
     def showGraphParamGrid(self, clf, model_name, _df):

@@ -18,54 +18,43 @@ class ProjectData(Project):
     def __init__(self):
         super().__init__()
 
-        self.current_dataset = None
-
-    def set_current_dataset(self, name):
-        """ Permet de setter le dataset sur lequel faire les traitements """
-        instance = self.get_dataset(name=name)
-
-        if isinstance(instance.df, pd.DataFrame) :
-            self.current_dataset = instance.df
-        else:
-            raise Exception("Le contenu du dataset doit être une instance de pd.Dataframe.")
-
     def get_count_row_columns(self):
         """ Permet de retourner le nombre de ligne et de colonne du dataset """
-        s = self.current_dataset.shape
+        s = self.current_df.shape
         return { 'rows' : s[0], 'columns' : s[1] }
 
     def get_types_variables(self, type="all"):
         """ Permet de retourner les types des variables du dataset """
         if type == "count":
-            return self.current_dataset.dtypes.value_counts()
+            return self.current_df.dtypes.value_counts()
         else:
-            return self.current_dataset.dtypes
+            return self.current_df.dtypes
 
     def get_count_duplicated_rows(self):
         """ Permet de retourner le nombre de ligne identique """
-        return self.current_dataset.duplicated().sum()
+        return self.current_df.duplicated().sum()
 
     def get_count_unique_value_by_variable(self):
         """ Permet de récupérer le nombre de valeur unique par variable"""
-        return self.current_dataset.nunique()
+        return self.current_df.nunique()
 
     def show_duplicated_row_by_variable(self, column=None):
         """ Permet de retourner les lignes ayant les mêmes valeurs en fonction des colonnes passées en paramètre """
 
         if column is not None:
-            print(self.current_dataset.loc[ self.current_dataset[column].duplicated(keep=False), : ])
+            print(self.current_df.loc[ self.current_df[column].duplicated(keep=False), : ])
             print("\n")
 
     def desc(self):
         """ Retourne la description statistique du dataset """
-        return self.current_dataset.describe(include="all")
+        return self.current_df.describe(include="all")
 
     def get_ratio_missing_values(self, show_heatmap=False):
         ''' Permet de retourner le ratio de valeur manquante pour chaque variable '''
 
-        a = self.current_dataset.isna().sum() / self.current_dataset.shape[0]
+        a = self.current_df.isna().sum() / self.current_df.shape[0]
         df = pd.DataFrame(a, columns=['ratio'])
-        df['sum'] = self.current_dataset.isna().sum()
+        df['sum'] = self.current_df.isna().sum()
 
         if show_heatmap == True:
             self.show_heatmap_nan_value()
@@ -76,24 +65,24 @@ class ProjectData(Project):
         ''' Permet de produire une image de l'ensemble du dataset pour visualiser les valeurs manquantes '''
         plt.figure(figsize=(20,10))
         plt.title("Représentation des valeurs manquante.")
-        sns.heatmap( self.current_dataset.isna(), cbar=cbar )
+        sns.heatmap( self.current_df.isna(), cbar=cbar )
         plt.show()
 
     def show_count_values_by_variable(self, ascending=True):
         """ Permet d'afficher le nombre d'occurence ayant les mêmes valeurs pour chaque variable """
 
-        for col in self.current_dataset.columns:
-            print(self.current_dataset[col].value_counts().sort_values(ascending=ascending))
+        for col in self.current_df.columns:
+            print(self.current_df[col].value_counts().sort_values(ascending=ascending))
 
     def calculate_outliers_zscore(self, columns=[], threshold_z = 3):
         """ Permet de retourner un df représentant les outliers dans les colonnes passées en paramètres """
-        df = st.zscore(self.current_dataset[columns])
+        df = st.zscore(self.current_df[columns])
         d = []
         for c in df.columns:
             count = len(df[ np.abs(df[c]) > threshold_z ]  )
             max = df[c].max()
             min = df[c].min()
-            ratio = round(count / self.current_dataset.shape[0], 2)
+            ratio = round(count / self.current_df.shape[0], 2)
 
             d.append( { 'variable' : c, 'count' : count, 'max' : max, 'min' : min, 'ratio' : ratio } )
         return pd.DataFrame(d).set_index('variable').sort_values('count', ascending=False)
@@ -101,21 +90,21 @@ class ProjectData(Project):
 
     def show_boxplot(self, columns=[]):
         """ Permet d'afficher une liste de boîte à moustache pour chaque colonne """
-        for col in self.current_dataset[columns].columns:
-            sns.boxplot(self.current_dataset[col], showfliers= True)
+        for col in self.current_df[columns].columns:
+            sns.boxplot(self.current_df[col], showfliers= True)
             plt.show()
 
     def show_histo_variable(self, columns=[], excludes=[], discrete=False, show_table=False):
         ''' Permet d'afficher un graphique de la distribution numérique des variables '''
         for col in columns:
-            if col not in excludes and pd.api.types.is_numeric_dtype(self.current_dataset[col]):
+            if col not in excludes and pd.api.types.is_numeric_dtype(self.current_df[col]):
                 plt.figure(figsize=(15,8))
-                sns.histplot(data=self.current_dataset, x=col, discrete=discrete, kde=True)
+                sns.histplot(data=self.current_df, x=col, discrete=discrete, kde=True)
                 plt.title(f"Distribution de la variable {col}")
                 plt.show()
 
                 if show_table == True:
-                    values = self.current_dataset[col]
+                    values = self.current_df[col]
                     q = [np.percentile(values, p) for p in [25,50,75]]
                     n = len(values)
 
@@ -164,9 +153,9 @@ class ProjectData(Project):
 
         for i, col in enumerate(columns):
 
-            if col not in excludes and pd.api.types.is_numeric_dtype(self.current_dataset[col]):
+            if col not in excludes and pd.api.types.is_numeric_dtype(self.current_df[col]):
                 plt.subplot(count_rows, count_cols, i+1)
-                sns.histplot(data=self.current_dataset, x=col, kde=True)
+                sns.histplot(data=self.current_df, x=col, kde=True)
 
         plt.tight_layout()
         plt.show()
@@ -174,11 +163,11 @@ class ProjectData(Project):
     def get_distribution_variable(self, col ):
         """ Permet de retourner numérique la distribution d'une variable du dataset """
 
-        effectifs = self.current_dataset[col].value_counts()
+        effectifs = self.current_df[col].value_counts()
         modalites = effectifs.index
         tab = pd.DataFrame(modalites, columns=[col])
         tab['n'] = effectifs.values
-        tab['f'] = tab['n'] / len(self.current_dataset)
+        tab['f'] = tab['n'] / len(self.current_df)
         tab['F'] = tab['f'].cumsum()
 
         return tab
@@ -196,7 +185,7 @@ class ProjectData(Project):
 
                 fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(12, 9))
 
-                t = self.current_dataset[col].value_counts(normalize=False).reset_index()
+                t = self.current_df[col].value_counts(normalize=False).reset_index()
 
                 axes[0].pie(t['count'], labels=t[col], autopct='%1.1f%%')
 
@@ -220,7 +209,7 @@ class ProjectData(Project):
         for i, col in enumerate(columns):
             if col not in excludes :
                 plt.subplot(count_rows, count_cols, c)
-                t = self.current_dataset[col].value_counts(normalize=False).reset_index()
+                t = self.current_df[col].value_counts(normalize=False).reset_index()
                 plt.bar(height=t['count'], x=t[col], label=t[col])
                 plt.title(f'Distribution de la variable {col}')
                 c+=1
@@ -240,7 +229,7 @@ class ProjectData(Project):
             if col not in excludes:
                 fig, axes = plt.subplots(figsize=figsize)
 
-                t = self.current_dataset[col].value_counts(normalize=False).reset_index()
+                t = self.current_df[col].value_counts(normalize=False).reset_index()
 
                 axes.barh(t[col], t['count'], align='center')
                 addvalues(axes, t['count'], t[col])
@@ -261,7 +250,7 @@ class ProjectData(Project):
         """ Permet de lister toutes les modalités de chaque variable qualitatives """
 
         for col in columns:
-            print(f"Variable {col} : {self.current_dataset[col].unique()}")
+            print(f"Variable {col} : {self.current_df[col].unique()}")
 
     def get_lorenz(self, values):
         """ Permet de retourner la courbe de Lorenz de la distribution d'une variable """
@@ -278,15 +267,15 @@ class ProjectData(Project):
                 classes = []
                 count_box = count_box + 1
                 field_x = target
-                taille = math.ceil(self.current_dataset[field_x].max() / count_box)
+                taille = math.ceil(self.current_df[field_x].max() / count_box)
                 field_y = col
 
-                tranches = np.arange(0, max(self.current_dataset[field_x]), taille )
-                indices = np.digitize(self.current_dataset[field_x], tranches)
+                tranches = np.arange(0, max(self.current_df[field_x]), taille )
+                indices = np.digitize(self.current_df[field_x], tranches)
 
                 for i, tranche in enumerate(tranches):
 
-                    items = self.current_dataset.loc[ indices == i, field_y ]
+                    items = self.current_df.loc[ indices == i, field_y ]
                     if len(items) > 0:
                         c = {
                             'valeurs' : items,
@@ -319,9 +308,9 @@ class ProjectData(Project):
                 plt.show()
 
                 if show_table == True:
-                    pearson = st.pearsonr(self.current_dataset[field_x],self.current_dataset[field_y])
-                    covariance = np.corrcoef(self.current_dataset[field_x],self.current_dataset[field_y])
-                    a, b = np.polyfit(self.current_dataset[field_x],self.current_dataset[field_y], 1)
+                    pearson = st.pearsonr(self.current_df[field_x],self.current_df[field_y])
+                    covariance = np.corrcoef(self.current_df[field_x],self.current_df[field_y])
+                    a, b = np.polyfit(self.current_df[field_x],self.current_df[field_y], 1)
                     d = {
                         "pearson_statistic" : pearson[0],
                         "pearson_pvalue" : pearson[1],
@@ -332,9 +321,9 @@ class ProjectData(Project):
 
                     fig, (axe1) = plt.subplots(1,1, figsize=(15,8))
 
-                    x_n = int(self.current_dataset[field_x].max()) + 1
+                    x_n = int(self.current_df[field_x].max()) + 1
 
-                    axe1.plot(self.current_dataset[field_x],self.current_dataset[field_y], 'o')
+                    axe1.plot(self.current_df[field_x],self.current_df[field_y], 'o')
                     axe1.plot(np.arange( x_n ), [a*x+b for x in np.arange(x_n)])
                     axe1.set_xlabel(f'{field_x}')
                     axe1.set_ylabel(f'{field_y}')
@@ -354,7 +343,7 @@ class ProjectData(Project):
         for i, col in enumerate(columns):
             if col not in excludes :
                 plt.subplot(count_rows, count_cols, c)
-                sns.boxplot(data=self.current_dataset, x=col, y=y)
+                sns.boxplot(data=self.current_df, x=col, y=y)
                 plt.title(f'{col} vs. {y}')
                 c+=1
 
@@ -365,11 +354,11 @@ class ProjectData(Project):
         """ Permet d'afficher un boxplot entre une variable qualitative et quantitative """
         for i, col in enumerate(columns):
             if col not in excludes:
-                t = self.current_dataset[col].value_counts(normalize=False).reset_index()
+                t = self.current_df[col].value_counts(normalize=False).reset_index()
                 groupes = []
                 labels = []
                 for m in t.values:
-                    groupes.append(self.current_dataset[self.current_dataset[col]==m[0]][target])
+                    groupes.append(self.current_df[self.current_df[col]==m[0]][target])
                     labels.append("{} (n={})".format(m[0], m[1]))
 
                 # Propriétés graphiques (pas très importantes)
@@ -391,7 +380,7 @@ class ProjectData(Project):
     def get_correlation_pearson(self, columns=[], excludes=[], target="", fillna=False, with_grid=False, count_cols=3):
         ''' Permet de retourner une vision de corrélation Pearson entre les variables et la target dans le cas variable continue / continue '''
         res = []
-        data = self.current_dataset.copy()
+        data = self.current_df.copy()
 
         if fillna == True:
             data = data.fillna(0)
@@ -414,10 +403,10 @@ class ProjectData(Project):
 
                     plt.subplot(count_rows, count_cols, c)
 
-                    x_n = int(self.current_dataset[target].max()) + 1
-                    a, b = np.polyfit(self.current_dataset[target],self.current_dataset[col], 1)
+                    x_n = int(self.current_df[target].max()) + 1
+                    a, b = np.polyfit(self.current_df[target],self.current_df[col], 1)
 
-                    plt.plot(self.current_dataset[target],self.current_dataset[col], 'o')
+                    plt.plot(self.current_df[target],self.current_df[col], 'o')
                     plt.plot(np.arange( x_n ), [a*x+b for x in np.arange(x_n)])
                     plt.xlabel(f'{target}')
                     plt.ylabel(f'{col}')
@@ -433,14 +422,14 @@ class ProjectData(Project):
     def show_cross_tab(self, variables, target):
         ''' Permet de visualiser la crosstab de pandas en fonctions des variables qualitatives '''
         for col in variables:
-            print( pd.crosstab(self.current_dataset[target], self.current_dataset[col]) )
+            print( pd.crosstab(self.current_df[target], self.current_df[col]) )
 
 
     def get_heat_cross_tab(self, variables, target):
         ''' Permet de visualiser une heatmap des crosstab des variables qualitatives '''
         for col in variables:
             plt.figure()
-            sns.heatmap( pd.crosstab(self.current_dataset[target], self.current_dataset[col]), annot=True, fmt="d" )
+            sns.heatmap( pd.crosstab(self.current_df[target], self.current_df[col]), annot=True, fmt="d" )
             plt.pause(0.001)
 
         plt.show(block=True)
@@ -463,7 +452,7 @@ class ProjectData(Project):
         res=[]
         for i, col in enumerate(columns):
             if col not in excludes:
-                r = eta_squared(self.current_dataset[col],self.current_dataset[target])
+                r = eta_squared(self.current_df[col],self.current_df[target])
                 res.append({ 'name' : col, 'SCT' : r[0], 'SCE' : r[1], 'rapport de corrélation' : r[2] })
 
         return pd.DataFrame(res)
@@ -471,9 +460,9 @@ class ProjectData(Project):
     def get_heat_correlation_numerical(self, columns, cluster=False):
         ''' Permet d'afficher une heatmap des corrélations entre variables continue '''
         plt.figure(figsize=(15,8))
-        sns.heatmap(self.current_dataset[ columns ].corr(), annot=True)
+        sns.heatmap(self.current_df[ columns ].corr(), annot=True)
         if cluster == True:
-            sns.clustermap(self.current_dataset[ columns ].corr(), annot=True)
+            sns.clustermap(self.current_df[ columns ].corr(), annot=True)
         plt.show()
 
     def get_heat_correlation_categorical(self, columns=[], excludes=[], count_cols=2, cluster=False):
@@ -492,10 +481,10 @@ class ProjectData(Project):
                         # print(count_rows, count_cols, idx)
                         axe = plt.subplot(count_rows, count_cols, idx)
 
-                        cont = self.current_dataset[[target,col]].pivot_table(index=target,columns=col,aggfunc=len,margins=True,margins_name="Total")
+                        cont = self.current_df[[target,col]].pivot_table(index=target,columns=col,aggfunc=len,margins=True,margins_name="Total")
                         tx = cont.loc[:,["Total"]]
                         ty = cont.loc[["Total"],:]
-                        n = len(self.current_dataset)
+                        n = len(self.current_df)
                         indep = tx.dot(ty) / n
 
                         c = cont.fillna(0) # On remplace les valeurs nulles par 0
@@ -521,13 +510,13 @@ class ProjectData(Project):
 
         if encoder == "one-hot":
             cat_encoder = OneHotEncoder()
-            encoded = cat_encoder.fit_transform(self.current_dataset[ columns_to_hot ])
+            encoded = cat_encoder.fit_transform(self.current_df[ columns_to_hot ])
 
-            output = pd.DataFrame(encoded.toarray(), columns=cat_encoder.get_feature_names_out(), index=self.current_dataset[ columns_to_hot ].index)
+            output = pd.DataFrame(encoded.toarray(), columns=cat_encoder.get_feature_names_out(), index=self.current_df[ columns_to_hot ].index)
 
 
         if output is not None:
-            df = pd.concat([self.current_dataset, output], axis=1)
+            df = pd.concat([self.current_df, output], axis=1)
             df = df.drop(columns_to_hot,axis=1)
 
             return df
@@ -539,11 +528,11 @@ class ProjectData(Project):
 
         if scale == True:
             scaler =  StandardScaler()
-            X = self.current_dataset.drop(excludes, axis=1)
+            X = self.current_df.drop(excludes, axis=1)
             features = X.columns
             X_scaled = scaler.fit_transform(X)
         else:
-            X_scaled = self.current_dataset.drop(excludes, axis=1)
+            X_scaled = self.current_df.drop(excludes, axis=1)
             features = X_scaled.columns
 
         pca = PCA(n_components=n_components)

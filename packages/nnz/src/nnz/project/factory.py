@@ -7,14 +7,14 @@ from nnz.project.yolo import ProjectYoloClassifier, ProjectYoloDetection
 
 class ProjectFactory:
 
-    def __init__(self, type):
+    def __init__(self, name=None, type=None, **kwargs):
         self.instance = None
 
         if type == nnz.PROJECT_TYPE_DATA:
             self.instance = ProjectData()
 
         elif type == nnz.PROJECT_TYPE_ML_PREDICTION:
-            self.instance = ProjectMLPrediction()
+            self.instance = ProjectMLPrediction(name=name, **kwargs)
 
         elif type == nnz.PROJECT_TYPE_ML_CLASSIFIER:
             self.instance = ProjectMLClassifier()

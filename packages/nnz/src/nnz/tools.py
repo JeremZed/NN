@@ -7,6 +7,12 @@ import shutil
 import json
 import copy
 import pickle
+import io
+from PIL import Image
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+import cv2
+import h5py
 
 def create_directory(path, mode=0o750):
     """ Permet de créer un sous dossier
@@ -136,3 +142,37 @@ def write_object_to_file(filepath, data):
 
     with open(filepath, 'wb') as f:
         pickle.dump(m, f)
+
+def convert_img_to_array_bytes(path):
+    """ Permet de retourner une liste de bytes en fonction du path de l'image """
+    image = Image.open(path)
+    image_buffer = io.BytesIO()
+
+    image.save(image_buffer, format='JPEG') # convert array to bytes
+    image_bytes = image_buffer.getvalue() # retrieve bytes string
+    image_np = np.asarray(image_bytes)
+
+    return image_np
+
+def convert_img_to_array_pixel(path):
+    """ Permet de retourner un une liste de pixel en fonction du path de l'image """
+    img_arr = cv2.imread(path)
+    return np.asarray(img_arr[...,::-1])
+
+def convert_img_to_pixel(path):
+    """ Permet de retourner les pixels d'une image """
+    image = Image.open(path)
+    return np.asarray(image)
+
+def convert_img_to_bytes(path):
+    """ Permet de retourner les bytes d'une images """
+    img = cv2.imread(path)
+    is_success, im_buf_arr = cv2.imencode(".jpg", img)
+    byte_im = im_buf_arr.tobytes()
+
+    return np.asarray([byte_im])
+
+def h5_read(path, name):
+    """ Permet de retourner le contenu d'un dataset h5 """
+    hf = h5py.File(path, 'r')
+    return hf.get(name)

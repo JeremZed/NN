@@ -11,34 +11,29 @@ class ImageAugmentation():
 
     def __init__(self, **kwargs) -> None:
 
+        self.shuffle__saturation_range = (0.1,5.0)
+        self.shuffle__contrast_range = (0.1,5.0)
+        self.shuffle__gamma_range = (0.1,5.0)
+        self.shuffle__brightness_range = (0.1,0.5)
+        self.shuffle__hue_range = (-0.5,0.5)
+        self.shuffle__quality_range = (10, 90)
+        self.shuffle__zoom_range = (0.01,0.25)
+        self.shuffle__rotation_range = (45,125)
+        self.shuffle__black_pixel_count_range = (1,5)
+        self.shuffle__black_pixel_size_range = (1,5)
+        self.shuffle__translate_ratio_range = (3,8)
+        self.shuffle__translate_direction_list_range = ['top', 'left', 'right', 'bottom']
+        self.shuffle__symmetry_list_range = ['both', 'horizontal', 'vertical']
+
         __default_options = {
-            "symmetry" : None, # "horizontal, vertical, both"
-            "saturation" : None,
-            "saturation_range" : None,
-            "contrast" : None,
-            "contrast_range" : None,
-            "gamma" : None,
-            "gamma_range" : None,
-            "brightness" : None,
-            "brightness_range" : None,
-            "hue" : None,
-            "hue_range" : None,
-            "quality" : None,
-            "quality_range" : None,
-            "zoom" : None,
-            "zoom_range" : None,
-            "rotation" : None,
-            "rotation_range" : None,
-            "black_pixel_count" : None,
-            "black_pixel_count_range" : None,
-            "black_pixel_size" : None,
-            "black_pixel_size_range" : None,
-            "count_augmentation" : 1,
-            "actions" : None
+            "count_new_image" : 1,
+            "count_augmentation_per_image" : 1,
+            "actions" : None,
+            "shuffle" : False
         }
 
         self.default_actions = [
-            "symmetry", "saturation", "contrast", "gamma", "brightness", "hue", "quality", "zoom", "rotation", "black_pixel"
+            "symmetry", "saturation", "contrast", "gamma", "brightness", "hue", "quality", "zoom", "rotation", "black_pixel", "translate"
         ]
 
         # On modifie les options par défaut par ceux indiqués en paramètres
@@ -71,44 +66,79 @@ class ImageAugmentation():
         start, end = range
         return round(random.uniform(start, end), 2)
 
+    def get_random_value_list(self, range):
+        """ Permet de retourner une valeur aléatoire depuis une liste de valeur """
+        return random.choice(range)
+
     def get_value(self, name, default_value):
         """ Permet de retourner une valeur en fonction des options indiquées """
+        attr = None
+        is_list = False
+        name_attr = f'shuffle__{name}_range'
+        try:
+            attr = getattr(self, name_attr)
+            if 'list' in name_attr:
+                is_list = True
+        except:
+            pass
 
-        if self.options[f'{name}'] is not None:
+        name_range = f'{name}_range'
+
+        if name in self.options and self.options[f'{name}'] is not None:
             _factor = self.options[f'{name}']
-        elif self.options[f'{name}_range'] is not None:
-            _factor = self.get_random_range_value(self.options[f'{name}_range'])
+
+        elif name_range in self.options and self.options[name_range] is not None:
+            if "list" in name_range:
+                _factor = self.get_random_value_list(self.options[name_range])
+            else:
+                _factor = self.get_random_range_value(self.options[name_range])
+
+        elif self.options['shuffle'] is not None and self.options['shuffle'] == True and attr is not None:
+            if is_list:
+                _factor = self.get_random_value_list(attr)
+            else:
+                _factor = self.get_random_range_value(attr)
         else:
             _factor = default_value
 
         return _factor
 
-    def generate(self, image):
+    def generate(self, image, type=None):
         """ Permet de lancer l'augmentation en fonction des options """
 
-        if self.options['actions'] is not None :
-            actions = self.options['actions']
-        else:
-            actions = []
-            for i in range(self.options['count_augmentation']):
-                actions.append(random.choice(self.default_actions))
+        images = []
 
-        img = image
-        for action in actions:
-            try:
-                func = getattr(self,action)
-                img = func(img)
-            except Exception as e:
-                print("Erreur avec l'action : ", action)
-                print(e)
-                pass
+        for c in range(self.options['count_new_image']):
 
-        return img
+            if self.options['actions'] is not None :
+                actions = self.options['actions']
+            else:
+                actions = []
+                for i in range(self.options['count_augmentation_per_image']):
+                    actions.append(random.choice(self.default_actions))
+
+            img = image
+            for action in actions:
+                try:
+                    func = getattr(self,action)
+                    img = func(img)
+                except Exception as e:
+                    print("Erreur avec l'action : ", action)
+                    print(e)
+                    pass
+
+            if type == "array":
+                img = np.array(img)
+
+            images.append(img)
+
+        return images
 
     def symmetry(self, image, direction="horizontal"):
         """ Permet d'effectuer une symétrie horizontale / verticale"""
 
-        _direction = self.options['symmetry'] if self.options['symmetry'] is not None else direction
+        # _direction = self.options['symmetry'] if 'symmetry' in self.options and self.options['symmetry'] is not None else direction
+        _direction = self.get_value("symmetry_list", direction)
 
         if _direction == "horizontal":
             return tf.image.flip_left_right(image)
@@ -149,7 +179,7 @@ class ImageAugmentation():
 
     def quality(self, image, quality=50):
         """ Permet de modifier la qualité de l'image """
-        f = self.get_value("quality", quality)
+        f = math.ceil(self.get_value("quality", quality))
         return tf.image.adjust_jpeg_quality(image, jpeg_quality=f)
 
     def zoom(self, image, scale=0.1):
@@ -211,3 +241,63 @@ class ImageAugmentation():
             image = self.create_rectangle(image, size= math.ceil(s) )
 
         return image
+
+    def translate(self, image, ratio=8, direction="right", coord=(0,0)):
+        """ Permet de faire une translation de l'image par défaut un huitième de deplacement sur la droite """
+        img = np.array(image)
+        h, w = img.shape[:2]
+
+        r = math.ceil(self.get_value("translate_ratio", ratio))
+        d = self.get_value("translate_direction_list", direction)
+
+        ratio_height, ratio_width = h / r, w / r
+
+        # Déplacement haut gauche
+        if d == "top left":
+            T = np.float32([[1, 0, -ratio_width], [0, 1, -ratio_height]])
+
+        # Déplacement bas droite
+        elif d == "bottom right":
+            T = np.float32([[1, 0, ratio_width], [0, 1, ratio_height]])
+
+        # Déplacement bas gauche
+        elif d == "bottom left":
+            T = np.float32([[1, 0, -ratio_width], [0, 1, ratio_height]])
+
+        # Déplacement haut droite
+        elif d == "top right":
+            T = np.float32([[1, 0, ratio_width], [0, 1, -ratio_height]])
+
+        # Déplacement haut
+        elif d == "top":
+            T = np.float32([[1, 0, 0], [0, 1, -ratio_height]])
+
+        # Déplacement Bas
+        elif d == "bottom":
+            T = np.float32([[1, 0, 0], [0, 1, ratio_height]])
+
+        # Déplacement Droite
+        elif d == "right":
+            T = np.float32([[1, 0, ratio_width], [0, 1, 0]])
+
+        # Déplacement Gauche
+        elif d == "left":
+            T = np.float32([[1, 0, -ratio_width], [0, 1, 0]])
+
+        # Déplacement personnalisé
+        elif d == "custom":
+
+            if self.options["translate_custom_coord"] is not None:
+                coord = self.options["translate_custom_coord"]
+            elif self.options["translate_custom_coord_range"] is not None:
+                x = self.get_random_range_value(self.options["translate_custom_coord_range"][0])
+                y = self.get_random_range_value(self.options["translate_custom_coord_range"][1])
+                coord = (math.ceil(x), math.ceil(y))
+
+            T = np.float32([[1, 0, coord[0]], [0, 1, coord[1]]])
+
+        # Déplacement par défaut vers la droite
+        else:
+            T = np.float32([[1, 0, ratio_width], [0, 1, 0]])
+
+        return cv2.warpAffine(img, T, (w, h))

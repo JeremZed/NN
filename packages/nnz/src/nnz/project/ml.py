@@ -167,3 +167,66 @@ class ProjectMLPrediction(ProjectML):
         self.save(best_model, path_model)
 
         return path_model, best_model, df
+
+    def show_graph_param_grid(self, clf, model_name, _df):
+        """ Permet de visualiser les courbes de scores pour chaque paramètre d'un grid search CV """
+
+        print("DICT PARAMS : ", clf.param_grid)
+        params = clf.param_grid
+
+        fig, ax = plt.subplots(1,len(params),figsize=(20,5))
+        fig.suptitle(f'Score per parameter of {model_name}')
+        fig.text(0.04, 0.5, 'MEAN SCORE', va='center', rotation='vertical')
+
+        for i, p in enumerate(params):
+            # print("--> : ", p, params[p])
+            name = p.split("__")
+
+            x = np.array([ str(a) for a in params[p] ])
+            axis_y_train = []
+            axis_y_test = []
+            y_train_e = []
+            y_test_e = []
+
+            for param_value in params[p]:
+                # print(f"Param Value : {param_value}")
+                values_train = _df[_df[f"param_{p}"] == param_value]['mean_train_score'].agg(['min', 'max', 'mean'])
+                values_train = np.where(np.isnan(values_train), 0, np.array(values_train))
+                axis_y_train.append(values_train[2])
+                y_train_e.append(values_train[1] - values_train[0])
+
+                values_test = _df[_df[f"param_{p}"] == param_value]['mean_test_score'].agg(['min', 'max', 'mean'])
+                values_test = np.where(np.isnan(values_test), 0, np.array(values_test))
+                axis_y_test.append(values_test[2])
+                y_test_e.append(values_test[1] - values_test[0])
+
+            # print("----->" , x, y,y_e)
+
+            if len(params) == 1:
+                ax.errorbar(
+                    x=x,
+                    y=axis_y_train,
+                    yerr=y_train_e,
+                    label='train_score'
+                )
+                ax.errorbar(
+                    x=x,
+                    y=axis_y_test,
+                    yerr=y_test_e,
+                    label='test_score'
+                )
+                ax.set_xlabel(name[1].upper())
+            else:
+                ax[i].errorbar(
+                    x=x,
+                    y=axis_y_train,
+                    yerr=y_train_e,
+                )
+                ax[i].errorbar(
+                    x=x,
+                    y=axis_y_test,
+                    yerr=y_test_e,
+                )
+                ax[i].set_xlabel(name[1].upper())
+
+        plt.show()
